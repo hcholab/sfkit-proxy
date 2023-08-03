@@ -89,7 +89,7 @@ sequenceDiagram
     Note over p1: Reconnect and update external IP
   end
 
-  loop Communicate with a peer
+  critical Communicate with a peer
     g1->>p1: TCP to/from 10.0.0.0/24:port
 
     loop Keep alive
