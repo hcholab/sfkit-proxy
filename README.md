@@ -41,11 +41,12 @@ peer addresses over a local SOCKS5 proxy, which:
 - Fetches external addresses of other peers via website API, using available credentials
   
 Further, upon a request to send/receive a TCP packet to/from a `10.0.0.0/24` address, this proxy:
+- Fetches current external peer address on first request, or in case the peer
+  [QUIC connection is closed](https://github.com/quic-go/quic-go#when-the-remote-peer-closes-the-connection)
+- Keeps QUIC connection alive for as long as possible
 - Sends/receives TCP data destined to/sourced from an external peer address via a QUIC packet, which is:
   * multiplexed with STUN on the same UDP socket
   * multiplexed from/to private peer TCP port(s) via a *single* UDP port on the socket
-- Fetches updated external peer address in case the peer
-  [QUIC connection is closed](https://github.com/quic-go/quic-go#when-the-remote-peer-closes-the-connection)
 
 Effectively, this architecture achieves lightweight VPN-like communication between peers,
 very similarly to how it is done in commercial software-defined networks like [Tailscale](https://tailscale.com)
@@ -88,11 +89,13 @@ sequenceDiagram
     Note over p1: Reconnect and update external IP
   end
 
-  p1->>m1: (Fetch default credentials)
-  p1->>w: Fetch external addresses of all peers
-
   loop Communicate with a peer
     g1->>p1: TCP to/from 10.0.0.0/24:port
+
+    loop Keep alive
+      p1->>m1: (Fetch default credentials)
+      p1->>w: (Fetch current external peer address)
+    end
 
     Note over p1: Translate between internal and external peer address,<br/>as well as TCP and QUIC
 
