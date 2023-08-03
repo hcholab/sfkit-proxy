@@ -33,10 +33,12 @@ we proxy its regular TCP connections to a fixed pool of virtual private `10.0.0.
 peer addresses over a local SOCKS5 proxy, which:
 - Opens a long-running local UDP socket
 - Connects to a public STUN server from this socket to determine the external NAT IP and port mapping
-- Records this external address via **sfkit** website API
+- Fetches default credentials from the instance metadata endpoint,
+  if running in the cloud and auth key was not provided
+- Records this external address via **sfkit** website API, using available credentials
 - Keeps STUN connection alive for as long as possible
 - Re-establishes connection and updates external address in case of network/server changes
-- Fetches external addresses of other peers via website API
+- Fetches external addresses of other peers via website API, using available credentials
   
 Further, upon a request to send/receive a TCP packet to/from a `10.0.0.0/24` address, this proxy:
 - Sends/receives TCP data destined to/sourced from an external peer address via a QUIC packet, which is:
@@ -56,6 +58,7 @@ sequenceDiagram
   participant s1 as sfkit
   participant g1 as SF-GWAS
   participant p1 as sfkit-proxy
+  participant m1 as Instance Metadata<br/>Endpoint
   end
 
   participant t as STUN server
@@ -64,7 +67,6 @@ sequenceDiagram
   box Purple Party 2
   participant p2 as sfkit-proxy
   participant g2 as SF-GWAS
-  participant s2 as sfkit
   end
 
   s1->>g1: Start with 10.0.0.0/24 IPs in (static) global config<br/>(PID is last 24 bits of IP)
@@ -75,7 +77,8 @@ sequenceDiagram
 
   critical Maintain external address
     p1->>t: Get external <ip>:<port> address
-  
+
+    p1->>m1: (Fetch default credentials)
     p1->>w: Update EXTERNAL address for party 1<br/>(::EXTERNAL_ADDR != ::IP_ADDRESS/PORTS)
 
     loop Every 20..180 sec
@@ -85,6 +88,7 @@ sequenceDiagram
     Note over p1: Reconnect and update external IP
   end
 
+  p1->>m1: (Fetch default credentials)
   p1->>w: Fetch external addresses of all peers
 
   loop Communicate with a peer
