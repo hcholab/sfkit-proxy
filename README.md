@@ -4,7 +4,7 @@
 via its [CLI](https://github.com/hcholab/sfkit) and [Website](https://github.com/hcholab/sfkit-website),
 configured with public IPs and ports of each party.
 
-However, in practice many parties are located behind [NAT](https://en.wikipedia.org/wiki/Network_address_translation)s,
+However, in practice many parties are located behind [NATs](https://en.wikipedia.org/wiki/Network_address_translation),
 making direct connections problematic without resorting to port forwarding.
 This may be hard to orchestrate in private multi-cloud environments like [Terra](https://terra.bio),
 or even impossible in some corporate settings (hospitals, research facilities etc.).
@@ -102,8 +102,9 @@ sequenceDiagram
 
 `sfkit-proxy` will be written in Go, with the majority of STUN logic borrowed from
 [syncthing](https://github.com/syncthing/syncthing/blob/eed12f3ec51b0e261e5a58033f35161e6d72b496/lib/stun/stun.go),
-and QUIC connection logic multiplexed over the UDP socket via [quic-go](https://github.com/quic-go/quic-go/issues/3929)
-(see [draft implementation](https://github.com/quic-go/quic-go/pull/3992)).
+QUIC connection logic multiplexed over the UDP socket via [quic-go](https://github.com/quic-go/quic-go/issues/3929)
+(see [draft implementation](https://github.com/quic-go/quic-go/pull/3992)), and SOCKS5 server from
+[go-socks5](https://pkg.go.dev/github.com/armon/go-socks5#section-readme), with a custom `Dial()` implementation.
 
 In the future, it will likely be possible to move some of the connection maintenance logic into the proposed
 [QUIC Connection Migration API](https://github.com/quic-go/quic-go/issues/3990).
