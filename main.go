@@ -9,11 +9,6 @@ import (
 	"golang.org/x/exp/slog"
 )
 
-// type Subscriber interface {
-// 	OnNATTypeChanged(natType NATType)
-// 	OnExternalAddressChanged(address *Host, via string)
-// }
-
 type Subscriber struct{}
 
 func (s *Subscriber) OnNATTypeChanged(natType stun.NATType) {
