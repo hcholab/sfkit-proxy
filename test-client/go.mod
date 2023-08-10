@@ -4,7 +4,10 @@ go 1.20
 
 require (
 	github.com/hcholab/sfkit-proxy v0.0.0-20230810002615-853f30a459b5
-	github.com/quic-go/quic-go v0.37.4
+
+	// Use draft quic-go implementation to support UDP multiplexing
+	// https://github.com/quic-go/quic-go/pull/3992/commits
+	github.com/quic-go/quic-go v0.37.1-0.20230802030815-6f12cce1462a
 )
 
 require (
