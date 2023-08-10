@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/url"
 
+	"github.com/hcholab/sfkit-proxy/logging"
 	"github.com/hcholab/sfkit-proxy/quic"
 	"golang.org/x/sync/errgroup"
 )
@@ -20,22 +21,25 @@ import (
 // 	slog.Info("OnExternalAddressChanged():", "address", address.String(), "via", via)
 // }
 
-func main() {
-	var addr string
-	flag.StringVar(&addr, "a", "udp://0.0.0.0:0", "Server URI")
-	flag.Parse()
+type Args struct {
+	URI     *url.URL
+	Verbose bool
+}
 
-	uri, err := url.Parse(addr)
+func main() {
+	args, err := parseArgs()
 	if err != nil {
-		log.Fatal("Error parsing server URI:", err)
+		log.Fatal(err)
 	}
+
+	logging.SetupDefault(args.Verbose)
 
 	ctx := context.Background()
 	errs, ctx := errgroup.WithContext(ctx)
 
-	quicSvc, err := quic.NewService(ctx, uri, errs)
+	quicSvc, err := quic.NewService(ctx, args.URI, errs)
 	if err != nil {
-		log.Fatal("Error in QUIC service: ", err)
+		log.Fatal(err)
 	}
 	defer quicSvc.Stop()
 
@@ -57,4 +61,14 @@ func main() {
 	if err = errs.Wait(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func parseArgs() (args Args, err error) {
+	var addr string
+	flag.StringVar(&addr, "a", "udp://0.0.0.0:0", "Server URI")
+	flag.BoolVar(&args.Verbose, "v", false, "Verbose output")
+	flag.Parse()
+
+	args.URI, err = url.Parse(addr)
+	return
 }
