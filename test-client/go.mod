@@ -1,4 +1,4 @@
-module test-client
+module github.com/hcholab/sfkit-proxy/test-client
 
 go 1.20
 

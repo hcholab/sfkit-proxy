@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 
+	quicServer "github.com/hcholab/sfkit-proxy/quic"
 	"github.com/quic-go/quic-go"
 )
 
@@ -20,7 +21,7 @@ func main() {
 
 	tlsConf := &tls.Config{
 		InsecureSkipVerify: true,
-		NextProtos:         []string{"sfkit"},
+		NextProtos:         []string{quicServer.Proto},
 	}
 	conn, err := quic.DialAddr(context.Background(), addr, tlsConf, nil)
 	if err != nil {
