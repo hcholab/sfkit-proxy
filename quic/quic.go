@@ -47,6 +47,7 @@ func (s *Service) Connection() *Connection {
 }
 
 func (s *Service) Stop() error {
+	slog.Warn("Stopping QUIC service")
 	return s.tr.Close()
 }
 
@@ -61,6 +62,9 @@ func (s *Service) startServer(ctx context.Context, tlsConf *tls.Config) (err err
 	for {
 		if conn, e := server.Accept(ctx); e != nil {
 			// TODO handle fully
+			if e == context.Canceled {
+				return
+			}
 			slog.Error("Accepting QUIC connection:", "err", e)
 		} else {
 			slog.Debug("Accepted incoming QUIC connection")
@@ -117,7 +121,9 @@ type Connection struct {
 func (c *Connection) Read(p []byte) (n int, err error) {
 	if n, _, err = c.tr.ReadNonQUICPacket(c.ctx, p); err != nil {
 		// TODO handle fully
-		slog.Error("Receiving non-QUIC packet:", "err", err)
+		if err != context.Canceled {
+			slog.Error("Receiving non-QUIC packet:", "err", err)
+		}
 	} else {
 		slog.Debug("Received a non-QUIC packet:", "bytes", string(p)) // TODO remove
 	}

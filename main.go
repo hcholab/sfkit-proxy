@@ -5,11 +5,15 @@ import (
 	"flag"
 	"log"
 	"net/url"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/hcholab/sfkit-proxy/logging"
 	"github.com/hcholab/sfkit-proxy/quic"
 	stun "github.com/hcholab/sfkit-proxy/stun2"
+	"golang.org/x/exp/slog"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -29,6 +33,22 @@ type Args struct {
 	Verbose        bool
 }
 
+func parseArgs() (args Args, err error) {
+	listenAddr := "udp://0.0.0.0:0"
+	stunServers := strings.Join(stun.DefaultServers(), ",")
+
+	flag.StringVar(&listenAddr, "a", listenAddr, "Server URI")
+	flag.StringVar(&stunServers, "s", stunServers, "Comma-separated list of STUN server URIs, in the order of preference")
+	flag.BoolVar(&args.Verbose, "v", false, "Verbose output")
+	flag.Parse()
+
+	if args.ListenURI, err = url.Parse(listenAddr); err != nil {
+		return
+	}
+	args.StunServerURIs, err = stun.ParseServers(strings.Split(stunServers, ","))
+	return
+}
+
 func main() {
 	args, err := parseArgs()
 	if err != nil {
@@ -37,8 +57,11 @@ func main() {
 
 	logging.SetupDefault(args.Verbose)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	errs, ctx := errgroup.WithContext(ctx)
+	go handleSignals(ctx, cancel)
 
 	quicSvc, err := quic.NewService(ctx, args.ListenURI, errs)
 	if err != nil {
@@ -67,23 +90,18 @@ func main() {
 	// 	log.Fatal("Error in STUN service: ", err)
 	// }
 
-	if err = errs.Wait(); err != nil {
+	if err = errs.Wait(); err != nil && err != context.Canceled {
 		log.Fatal(err)
 	}
 }
 
-func parseArgs() (args Args, err error) {
-	listenAddr := "udp://0.0.0.0:0"
-	stunServers := strings.Join(stun.DefaultServers(), ",")
-
-	flag.StringVar(&listenAddr, "a", listenAddr, "Server URI")
-	flag.StringVar(&stunServers, "s", stunServers, "Comma-separated list of STUN server URIs, in the order of preference")
-	flag.BoolVar(&args.Verbose, "v", false, "Verbose output")
-	flag.Parse()
-
-	if args.ListenURI, err = url.Parse(listenAddr); err != nil {
-		return
+func handleSignals(ctx context.Context, cancel context.CancelFunc) {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	select {
+	case <-ctx.Done():
+	case sig := <-sigCh:
+		slog.Warn("Received", "signal", sig)
+		cancel()
 	}
-	args.StunServerURIs, err = stun.ParseServers(strings.Split(stunServers, ","))
-	return
 }

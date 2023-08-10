@@ -107,6 +107,7 @@ func stunHandler(res stun.Event) {
 }
 
 func (s *Service) Stop() error {
+	slog.Warn("Stopping STUN service")
 	return s.client.Close()
 }
 
@@ -118,6 +119,10 @@ type Connection struct {
 }
 
 func (c *Connection) Read(p []byte) (n int, err error) {
+	if c.qconn == nil {
+		err = fmt.Errorf("no underlying QUIC connection")
+		return
+	}
 	if n, err = c.qconn.Read(p); err == nil && !stun.IsMessage(p) {
 		err = fmt.Errorf("not a STUN packet: %s", p)
 	}
@@ -129,6 +134,10 @@ func (c *Connection) Read(p []byte) (n int, err error) {
 }
 
 func (c *Connection) Write(p []byte) (n int, err error) {
+	if c.qconn == nil {
+		err = fmt.Errorf("no underlying QUIC connection")
+		return
+	}
 	if !stun.IsMessage(p) {
 		err = fmt.Errorf("not a STUN packet: %s", p)
 		return
@@ -140,7 +149,7 @@ func (c *Connection) Write(p []byte) (n int, err error) {
 func (c *Connection) Close() error {
 	// we don't want to close the underlying QUIC connection
 	// when STUN closes, so this is a dummy operation
-	slog.Debug("Closing STUN connection")
+	slog.Warn("Closing STUN connection")
 	c.qconn = nil
 	c.addr = nil
 	return nil
