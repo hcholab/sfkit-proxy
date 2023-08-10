@@ -78,30 +78,32 @@ func NewService(ctx context.Context, uris []URI, errs *errgroup.Group, qconn *qu
 	if err != nil {
 		return
 	}
+	if s.client, err = stun.NewClient(&Connection{qconn, addr}); err != nil {
+		return
+	}
 
-	if s.client, err = stun.NewClient(&Connection{
-		addr:  addr,
-		qconn: qconn,
-	}); err != nil {
-		return
-	}
-	// Building binding request with random transaction id.
-	message := stun.MustBuild(stun.TransactionID, stun.BindingRequest)
-	// Sending request to STUN server, waiting for response message.
-	if err = s.client.Do(message, func(res stun.Event) {
-		if res.Error != nil {
-			panic(res.Error)
-		}
-		// Decoding XOR-MAPPED-ADDRESS attribute from message.
-		var xorAddr stun.XORMappedAddress
-		if err := xorAddr.GetFrom(res.Message); err != nil {
-			panic(err)
-		}
-		fmt.Println("your IP is", xorAddr.IP)
-	}); err != nil {
-		return
-	}
+	// send async binding request to the STUN server
+	msg := stun.MustBuild(stun.TransactionID, stun.BindingRequest)
+	err = s.client.Start(msg, stunHandler)
 	return
+}
+
+func stunHandler(res stun.Event) {
+	var (
+		addr stun.XORMappedAddress
+		err  error
+	)
+	if res.Error != nil {
+		err = res.Error
+	} else {
+		// decode XOR-MAPPED-ADDRESS attribute from message.
+		slog.Debug("Response from STUN:", "message", res.Message)
+		err = addr.GetFrom(res.Message)
+	}
+	if err != nil {
+		slog.Error("Response from STUN:", "err", err)
+	}
+	slog.Info("Obtained external address from STUN:", "addr", addr)
 }
 
 func (s *Service) Stop() error {
