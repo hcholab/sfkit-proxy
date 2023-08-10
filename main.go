@@ -50,6 +50,12 @@ func parseArgs() (args Args, err error) {
 }
 
 func main() {
+	// a separate run() is used so that all deferred cleanups
+	// have a chance to finish before os.Exit()
+	os.Exit(run())
+}
+
+func run() (exitCode int) {
 	args, err := parseArgs()
 	if err != nil {
 		log.Fatal(err)
@@ -58,10 +64,8 @@ func main() {
 	logging.SetupDefault(args.Verbose)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	errs, ctx := errgroup.WithContext(ctx)
-	go handleSignals(ctx, cancel)
+	defer cancel()
 
 	quicSvc, err := quic.NewService(ctx, args.ListenURI, errs)
 	if err != nil {
@@ -90,18 +94,28 @@ func main() {
 	// 	log.Fatal("Error in STUN service: ", err)
 	// }
 
-	if err = errs.Wait(); err != nil && err != context.Canceled {
+	exitCh := handleSignals(ctx, cancel)
+	if err = errs.Wait(); err != nil {
 		log.Fatal(err)
 	}
+	return <-exitCh
 }
 
-func handleSignals(ctx context.Context, cancel context.CancelFunc) {
+func handleSignals(ctx context.Context, cancel context.CancelFunc) <-chan int {
+	exitCh := make(chan int, 1)
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	select {
-	case <-ctx.Done():
-	case sig := <-sigCh:
-		slog.Warn("Received", "signal", sig)
-		cancel()
-	}
+
+	go func() {
+		select {
+		case <-ctx.Done():
+		case sig := <-sigCh:
+			slog.Warn("Received", "signal", sig)
+			cancel()
+			if s, ok := sig.(syscall.Signal); ok {
+				exitCh <- 128 + int(s)
+			}
+		}
+	}()
+	return exitCh
 }
