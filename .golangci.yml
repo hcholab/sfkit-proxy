@@ -1,0 +1,15 @@
+linters:
+  enable:
+  - forbidigo
+
+linters-settings:
+  forbidigo:
+    forbid:
+    - p: ^log\.Fatal
+      msg: |
+        Fatal logging is considered dangerous.
+        Consider using proper error handling:
+        https://jhall.io/posts/2022-02-26-fatal-logging/
+
+    - p: ^panic
+      msg: Make sure panic() is used intentionally

@@ -20,8 +20,5 @@
 # Go workspace file
 go.work
 
-# VS Code settings
-.vscode/
-
 # main executable
 sfkit-proxy
