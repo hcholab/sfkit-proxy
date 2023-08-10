@@ -6,13 +6,14 @@ require (
 	github.com/AudriusButkevicius/pfilter v0.0.11
 	github.com/ccding/go-stun/stun v0.0.0-20200514191101-4dc67bcdb029
 
+	// Use draft quic-go implementation to support UDP multiplexing
+	// https://github.com/quic-go/quic-go/pull/3992/commits
+	github.com/quic-go/quic-go v0.37.1-0.20230802030815-6f12cce1462a
+
 	// TODO replace with stdlib slog after migrating to Go 1.21
 	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1
+	golang.org/x/sync v0.2.0
 )
-
-// Use draft quic-go implementation to support UDP multiplexing
-// https://github.com/quic-go/quic-go/pull/3992/commits
-require github.com/quic-go/quic-go v0.37.1-0.20230802030815-6f12cce1462a // indirect
 
 require (
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect

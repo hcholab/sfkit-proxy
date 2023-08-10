@@ -2,35 +2,59 @@ package main
 
 import (
 	"context"
+	"flag"
+	"log"
 	"net/url"
-	"os"
 
-	"github.com/hcholab/sfkit-proxy/stun"
-	"golang.org/x/exp/slog"
+	"github.com/hcholab/sfkit-proxy/quic"
+	"golang.org/x/sync/errgroup"
 )
 
-type Subscriber struct{}
+// type Subscriber struct{}
 
-func (s *Subscriber) OnNATTypeChanged(natType stun.NATType) {
-	slog.Info("OnNATTypeChanged(): ", natType)
-}
+// func (s *Subscriber) OnNATTypeChanged(natType stun.NATType) {
+// 	slog.Info("OnNATTypeChanged():", "natType", natType)
+// }
 
-func (s *Subscriber) OnExternalAddressChanged(address *stun.Host, via string) {
-	slog.Info("OnExternalAddressChanged(): ", address.String(), "via", via)
-}
+// func (s *Subscriber) OnExternalAddressChanged(address *stun.Host, via string) {
+// 	slog.Info("OnExternalAddressChanged():", "address", address.String(), "via", via)
+// }
 
 func main() {
-	ctx := context.Background()
-	uri, err := url.Parse("quic://0.0.0.0:0")
+	var addr string
+	flag.StringVar(&addr, "a", "udp://0.0.0.0:0", "Server URI")
+	flag.Parse()
+
+	uri, err := url.Parse(addr)
 	if err != nil {
-		slog.Error("Problem parsing the URL")
-		os.Exit(1)
+		log.Fatal("Error parsing server URI:", err)
 	}
-	cfg := &stun.Config{
-		NATEnabled:          true,
-		StunKeepaliveStartS: 180,
-		StunKeepaliveMinS:   20,
-		RawStunServers:      []string{"default"},
+
+	ctx := context.Background()
+	errs, ctx := errgroup.WithContext(ctx)
+
+	quicSvc, err := quic.NewService(ctx, uri, errs)
+	if err != nil {
+		log.Fatal("Error in QUIC service: ", err)
 	}
-	stun.Serve(ctx, uri, cfg, &Subscriber{})
+	defer quicSvc.Stop()
+
+	// uri, err := url.Parse("quic://0.0.0.0:0")
+	// if err != nil {
+	// 	log.Fatal("Error parsing the URL: ", err)
+	// }
+	// cfg := &stun.Config{
+	// 	NATEnabled:          true,
+	// 	StunKeepaliveStartS: 180,
+	// 	StunKeepaliveMinS:   20,
+	// 	RawStunServers:      []string{"default"},
+	// }
+	// err = stun.Serve(ctx, uri, cfg, &Subscriber{})
+	// if err != nil {
+	// 	log.Fatal("Error in STUN service: ", err)
+	// }
+
+	if err = errs.Wait(); err != nil {
+		log.Fatal(err)
+	}
 }
