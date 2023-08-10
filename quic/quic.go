@@ -16,14 +16,13 @@ import (
 )
 
 type Service struct {
-	tr *quic.Transport
+	tr   *quic.Transport
+	conn *Connection
 }
 
 const retryMs = 1000
 
-type NonQUICCallback func(context.Context, []byte, net.Addr) error
-
-func NewService(ctx context.Context, uri *url.URL, errs *errgroup.Group, cb NonQUICCallback) (s *Service, err error) {
+func NewService(ctx context.Context, uri *url.URL, errs *errgroup.Group) (s *Service, err error) {
 	s = &Service{}
 	addr, err := net.ResolveUDPAddr(uri.Scheme, uri.Host)
 	if err != nil {
@@ -35,31 +34,20 @@ func NewService(ctx context.Context, uri *url.URL, errs *errgroup.Group, cb NonQ
 	}
 	slog.Debug("Opened UDP socket:", "localAddr", conn.LocalAddr().String())
 	s.tr = &quic.Transport{Conn: conn}
+	s.conn = &Connection{ctx: ctx, tr: s.tr}
 
-	go s.readNonQUICPackets(ctx, cb)
 	errs.Go(func() error {
 		return s.startServer(ctx, generateTLSConfig())
 	})
 	return
 }
 
-func (s *Service) Stop() (err error) {
-	return s.tr.Close()
+func (s *Service) Connection() *Connection {
+	return s.conn
 }
 
-func (s *Service) readNonQUICPackets(ctx context.Context, cb NonQUICCallback) {
-	for {
-		b := make([]byte, 1024)
-		slog.Debug("Waiting for a non-QUIC packet") // TODO remove
-		_, addr, err := s.tr.ReadNonQUICPacket(ctx, b)
-		if err == nil {
-			err = cb(ctx, b, addr)
-		}
-		if err != nil {
-			// TODO handle fully
-			slog.Error("Receiving non-QUIC packet:", "err", err)
-		}
-	}
+func (s *Service) Stop() error {
+	return s.tr.Close()
 }
 
 // RunServer listens on *quic.Transport and handles incoming connections and their streams
@@ -121,10 +109,21 @@ func handleServerStream(s quic.Stream) {
 	}
 }
 
-// A wrapper for io.Writer that also logs the message.
-type loggingWriter struct{ io.Writer }
+type Connection struct {
+	ctx context.Context
+	tr  *quic.Transport
+}
 
-func (w loggingWriter) Write(b []byte) (int, error) {
-	slog.Debug("Got", "client_message", string(b))
-	return w.Writer.Write(b)
+func (c *Connection) Read(p []byte) (n int, err error) {
+	if n, _, err = c.tr.ReadNonQUICPacket(c.ctx, p); err != nil {
+		// TODO handle fully
+		slog.Error("Receiving non-QUIC packet:", "err", err)
+	} else {
+		slog.Debug("Received a non-QUIC packet:", "bytes", string(p)) // TODO remove
+	}
+	return
+}
+
+func (c *Connection) Write(p []byte, addr net.Addr) (int, error) {
+	return c.tr.WriteTo(p, addr)
 }

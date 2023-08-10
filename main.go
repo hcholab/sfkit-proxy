@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log"
 	"net/url"
+	"strings"
 
 	"github.com/hcholab/sfkit-proxy/logging"
 	"github.com/hcholab/sfkit-proxy/quic"
@@ -23,8 +24,9 @@ import (
 // }
 
 type Args struct {
-	URI     *url.URL
-	Verbose bool
+	ListenURI      *url.URL
+	StunServerURIs []stun.URI
+	Verbose        bool
 }
 
 func main() {
@@ -38,11 +40,17 @@ func main() {
 	ctx := context.Background()
 	errs, ctx := errgroup.WithContext(ctx)
 
-	quicSvc, err := quic.NewService(ctx, args.URI, errs, stun.Callback)
+	quicSvc, err := quic.NewService(ctx, args.ListenURI, errs)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer quicSvc.Stop()
+
+	stunSvc, err := stun.NewService(ctx, args.StunServerURIs, errs, quicSvc.Connection())
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer stunSvc.Stop()
 
 	// uri, err := url.Parse("quic://0.0.0.0:0")
 	// if err != nil {
@@ -65,11 +73,17 @@ func main() {
 }
 
 func parseArgs() (args Args, err error) {
-	var addr string
-	flag.StringVar(&addr, "a", "udp://0.0.0.0:0", "Server URI")
+	listenAddr := "udp://0.0.0.0:0"
+	stunServers := strings.Join(stun.DefaultServers(), ",")
+
+	flag.StringVar(&listenAddr, "a", listenAddr, "Server URI")
+	flag.StringVar(&stunServers, "s", stunServers, "Comma-separated list of STUN server URIs, in the order of preference")
 	flag.BoolVar(&args.Verbose, "v", false, "Verbose output")
 	flag.Parse()
 
-	args.URI, err = url.Parse(addr)
+	if args.ListenURI, err = url.Parse(listenAddr); err != nil {
+		return
+	}
+	args.StunServerURIs, err = stun.ParseServers(strings.Split(stunServers, ","))
 	return
 }
