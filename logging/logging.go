@@ -38,16 +38,13 @@ func (h *prettyHandler) Handle(ctx context.Context, r slog.Record) error {
 		level = color.RedString(level)
 	}
 
-	fields := make(map[string]interface{}, r.NumAttrs())
+	fields := make([]string, 0, r.NumAttrs())
 	r.Attrs(func(a slog.Attr) bool {
-		fields[a.Key] = a.Value.Any()
+		kv := fmt.Sprintf("%s=%+v", a.Key, a.Value.Any())
+		fields = append(fields, strings.TrimSpace(kv))
 		return true
 	})
-	var builder strings.Builder
-	for k, v := range fields {
-		builder.WriteString(fmt.Sprintf("%s=%+v", k, v))
-	}
-	fieldStr := strings.TrimSpace(builder.String())
+	fieldStr := strings.Join(fields, " ")
 
 	timeStr := r.Time.Format("[15:05:05.000]")
 	msg := color.CyanString(r.Message)

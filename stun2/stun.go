@@ -131,7 +131,7 @@ func (c *Connection) Write(p []byte) (n int, err error) {
 		err = fmt.Errorf("not a STUN packet: %s", p)
 		return
 	}
-	slog.Debug("Sending a STUN packet:", "bytes", string(p))
+	slog.Debug("Sending a STUN packet:", "bytes", string(p), "to", c.addr)
 	return c.qconn.Write(p, c.addr)
 }
 
