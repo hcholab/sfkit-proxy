@@ -6,6 +6,7 @@ require (
 	github.com/AudriusButkevicius/pfilter v0.0.11
 	github.com/ccding/go-stun/stun v0.0.0-20200514191101-4dc67bcdb029
 	github.com/fatih/color v1.15.0
+	github.com/pion/stun v0.6.1
 
 	// Use draft quic-go implementation to support UDP multiplexing
 	// https://github.com/quic-go/quic-go/pull/3992/commits
@@ -23,8 +24,10 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.17 // indirect
 	github.com/onsi/ginkgo/v2 v2.10.0 // indirect
+	github.com/pion/dtls/v2 v2.2.7 // indirect
+	github.com/pion/logging v0.2.2 // indirect
+	github.com/pion/transport/v2 v2.2.1 // indirect
 	github.com/quic-go/qtls-go1-20 v0.3.0 // indirect
-	github.com/stretchr/testify v1.8.4 // indirect
 	golang.org/x/crypto v0.10.0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/net v0.11.0 // indirect

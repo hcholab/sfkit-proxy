@@ -8,6 +8,7 @@ import (
 
 	"github.com/hcholab/sfkit-proxy/logging"
 	"github.com/hcholab/sfkit-proxy/quic"
+	stun "github.com/hcholab/sfkit-proxy/stun2"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -37,7 +38,7 @@ func main() {
 	ctx := context.Background()
 	errs, ctx := errgroup.WithContext(ctx)
 
-	quicSvc, err := quic.NewService(ctx, args.URI, errs)
+	quicSvc, err := quic.NewService(ctx, args.URI, errs, stun.Callback)
 	if err != nil {
 		log.Fatal(err)
 	}
