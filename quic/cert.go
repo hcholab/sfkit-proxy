@@ -14,7 +14,7 @@ const Proto = "sfkit"
 // Setup a bare-bones TLS config for the server
 // https://github.com/quic-go/quic-go/blob/master/example/echo/echo.go
 func generateTLSConfig() (tlsConf *tls.Config, err error) {
-	key, err := rsa.GenerateKey(rand.Reader, 1024)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return
 	}
