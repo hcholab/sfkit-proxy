@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
 	"net/url"
 	"os"
 	"os/signal"
@@ -50,15 +49,19 @@ func parseArgs() (args Args, err error) {
 }
 
 func main() {
-	// a separate run() is used so that all deferred cleanups
-	// have a chance to finish before os.Exit()
-	os.Exit(run())
+	exitCode, err := run()
+	if err != nil && err != context.Canceled {
+		slog.Error(err.Error())
+	}
+	os.Exit(exitCode)
 }
 
-func run() (exitCode int) {
+func run() (exitCode int, err error) {
+	exitCode = 1
+
 	args, err := parseArgs()
 	if err != nil {
-		log.Fatal(err)
+		return
 	}
 
 	logging.SetupDefault(args.Verbose)
@@ -69,13 +72,13 @@ func run() (exitCode int) {
 
 	quicSvc, err := quic.NewService(ctx, args.ListenURI, errs)
 	if err != nil {
-		log.Fatal(err)
+		return
 	}
 	defer quicSvc.Stop()
 
 	stunSvc, err := stun.NewService(ctx, args.StunServerURIs, errs, quicSvc.Connection())
 	if err != nil {
-		log.Fatal(err)
+		return
 	}
 	defer stunSvc.Stop()
 
@@ -96,9 +99,10 @@ func run() (exitCode int) {
 
 	exitCh := handleSignals(ctx, cancel)
 	if err = errs.Wait(); err != nil {
-		log.Fatal(err)
+		return
 	}
-	return <-exitCh
+	exitCode = <-exitCh
+	return
 }
 
 func handleSignals(ctx context.Context, cancel context.CancelFunc) <-chan int {

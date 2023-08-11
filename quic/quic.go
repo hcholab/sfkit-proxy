@@ -36,8 +36,12 @@ func NewService(ctx context.Context, uri *url.URL, errs *errgroup.Group) (s *Ser
 	s.tr = &quic.Transport{Conn: conn}
 	s.conn = &Connection{ctx: ctx, tr: s.tr}
 
+	tlsConf, err := generateTLSConfig()
+	if err != nil {
+		return
+	}
 	errs.Go(func() error {
-		return s.startServer(ctx, generateTLSConfig())
+		return s.startServer(ctx, tlsConf)
 	})
 	return
 }

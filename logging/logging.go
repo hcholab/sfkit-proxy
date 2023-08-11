@@ -13,8 +13,6 @@ import (
 	"golang.org/x/exp/slog"
 )
 
-var Fatal = log.Fatal
-
 type prettyHandlerOptions struct {
 	SlogOpts slog.HandlerOptions
 }

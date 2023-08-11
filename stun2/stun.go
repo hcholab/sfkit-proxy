@@ -102,6 +102,7 @@ func stunHandler(res stun.Event) {
 	}
 	if err != nil {
 		slog.Error("Response from STUN:", "err", err)
+		panic(err) //nolint
 	}
 	slog.Info("Obtained external address from STUN:", "addr", addr)
 }
@@ -120,11 +121,11 @@ type Connection struct {
 
 func (c *Connection) Read(p []byte) (n int, err error) {
 	if c.qconn == nil {
-		err = fmt.Errorf("no underlying QUIC connection")
+		err = checkLogError(fmt.Errorf("no underlying QUIC connection"))
 		return
 	}
 	if n, err = c.qconn.Read(p); err == nil && !stun.IsMessage(p) {
-		err = fmt.Errorf("not a STUN packet: %s", p)
+		err = checkLogError(fmt.Errorf("not a STUN packet: %s", p))
 	}
 	if err != nil {
 		return
@@ -135,11 +136,11 @@ func (c *Connection) Read(p []byte) (n int, err error) {
 
 func (c *Connection) Write(p []byte) (n int, err error) {
 	if c.qconn == nil {
-		err = fmt.Errorf("no underlying QUIC connection")
+		err = checkLogError(fmt.Errorf("no underlying QUIC connection"))
 		return
 	}
 	if !stun.IsMessage(p) {
-		err = fmt.Errorf("not a STUN packet: %s", p)
+		err = checkLogError(fmt.Errorf("not a STUN packet: %s", p))
 		return
 	}
 	slog.Debug("Sending a STUN packet:", "bytes", string(p), "to", c.addr)
@@ -153,4 +154,11 @@ func (c *Connection) Close() error {
 	c.qconn = nil
 	c.addr = nil
 	return nil
+}
+
+func checkLogError(err error) error {
+	if err != context.Canceled {
+		slog.Error(err.Error())
+	}
+	return err
 }

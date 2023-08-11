@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 
 	quicServer "github.com/hcholab/sfkit-proxy/quic"
 	"github.com/quic-go/quic-go"
@@ -25,25 +24,25 @@ func main() {
 	}
 	conn, err := quic.DialAddr(context.Background(), addr, tlsConf, nil)
 	if err != nil {
-		log.Fatal(err)
+		panic(err) //nolint
 	}
 
 	stream, err := conn.OpenStreamSync(context.Background())
 	if err != nil {
-		log.Fatal(err)
+		panic(err) //nolint
 	}
 
 	fmt.Printf("Client: Sending '%s'\n", message)
 	_, err = stream.Write([]byte(message))
 	if err != nil {
-		log.Fatal(err)
+		panic(err) //nolint
 	}
 	stream.Close() // close for writing (send EOF)
 
 	buf := make([]byte, len(message))
 	_, err = io.ReadFull(stream, buf)
 	if err != nil {
-		log.Fatal(err)
+		panic(err) //nolint
 	}
 	fmt.Printf("Client: Got '%s'\n", buf)
 }
