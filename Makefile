@@ -5,6 +5,6 @@ install_gow:
 	@command -v gow @>/dev/null || \
 	go install github.com/mitranim/gow@latest
 
-dev:
+dev: install_gow
 	@PREFIX=$$(printf '%0.s—' {1..80}) && \
 	gow -S "$${PREFIX}" run . $(ARGS)
