@@ -39,7 +39,7 @@ peer addresses over a local SOCKS5 proxy, which:
 - Keeps STUN connection alive for as long as possible
 - Re-establishes connection and updates external address in case of network/server changes
 - Fetches external addresses of other peers via website API, using available credentials
-  
+
 Further, upon a request to send/receive a TCP packet to/from a `10.0.0.0/24` address, this proxy:
 - Fetches current external peer address on first request, or in case the peer
   [QUIC connection is closed](https://github.com/quic-go/quic-go#when-the-remote-peer-closes-the-connection)
@@ -101,7 +101,7 @@ sequenceDiagram
 
     p1->>p2: Send/receive QUIC packet
 
-    p2->>g2: Translate protocols and addresses 
+    p2->>g2: Translate protocols and addresses
   end
 ```
 
@@ -136,3 +136,15 @@ to easily swap them with a commercial-grade SOCKS proxy,
 like [Tailscale in userspace mode](https://tailscale.com/kb/1112/userspace-networking/),
 which has already been shown to work in early tests.
 This should minimize technical risk of this project.
+
+## Development
+
+To start [gow](https://github.com/mitranim/gow) development server
+that automatically rebuilds and reruns the Go executable on code changes, use
+```
+make dev -- -v
+```
+There're a number of [hotkeys](https://github.com/mitranim/gow#hotkeys)
+provided by `gow` that are used to control the behavior of the server.
+
+You can also use `go run . -h` directly to see the list of available arguments after `--`
