@@ -6,5 +6,5 @@ install_gow:
 	go install github.com/mitranim/gow@latest
 
 dev: install_gow
-	@PREFIX=$$(printf '%0.s—' {1..80}) && \
+	@PREFIX=$$(printf "—%.0s" $$(seq 1 $$(tput cols))) && \
 	gow -S "$${PREFIX}" run . $(ARGS)
