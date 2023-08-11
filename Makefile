@@ -7,4 +7,4 @@ install_gow:
 
 dev: install_gow
 	@PREFIX=$$(printf "—%.0s" $$(seq 1 $$(tput cols))) && \
-	gow -S "$${PREFIX}" run . $(ARGS)
+	gow -S "$${PREFIX}" -i demo run . $(ARGS)
