@@ -1,4 +1,6 @@
 import asyncio
+import os
+import socket
 from typing import Dict
 
 from quart import Quart, Websocket, request, websocket
@@ -15,9 +17,16 @@ studies = {
 # may want to keep in-memory
 connected_clients: Dict[str, Dict[str, Websocket]] = {}
 
+PORT = os.getenv("PORT", "8000")
+ORIGIN = os.getenv("ORIGIN", f"ws://host.docker.internal:{PORT}")
+
 
 @app.websocket("/api/ice")
 async def handler():
+    # check origin
+    if websocket.headers.get("Origin") != ORIGIN:
+        return "Unauthorized", 401
+
     client_id = request.headers.get("oidc_claim_user_id")
     if not client_id:
         return "Unauthorized", 401
@@ -66,4 +75,4 @@ async def handler():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
+    app.run(host="0.0.0.0", port=int(PORT))
