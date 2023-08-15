@@ -16,11 +16,12 @@ require (
 	github.com/google/pprof v0.0.0-20230602150820-91b7bce49751 // indirect
 	github.com/onsi/ginkgo/v2 v2.10.0 // indirect
 	github.com/quic-go/qtls-go1-20 v0.3.1 // indirect
-	golang.org/x/crypto v0.10.0 // indirect
-	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1 // indirect
-	golang.org/x/mod v0.10.0 // indirect
-	golang.org/x/net v0.11.0 // indirect
+	github.com/stretchr/testify v1.8.4 // indirect
+	golang.org/x/crypto v0.11.0 // indirect
+	golang.org/x/exp v0.0.0-20230811145659-89c5cff77bcb // indirect
+	golang.org/x/mod v0.11.0 // indirect
+	golang.org/x/net v0.13.0 // indirect
 	golang.org/x/sync v0.2.0 // indirect
-	golang.org/x/sys v0.9.0 // indirect
+	golang.org/x/sys v0.10.0 // indirect
 	golang.org/x/tools v0.9.3 // indirect
 )
