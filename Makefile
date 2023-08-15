@@ -5,7 +5,7 @@ endif
 BUILD_DIR ?= "."
 export PATH := $(HOME)/go/bin:$(PATH)
 
-install_gow:
+install-gow:
 	@command -v gow @>/dev/null || \
 	go install github.com/mitranim/gow@latest
 
