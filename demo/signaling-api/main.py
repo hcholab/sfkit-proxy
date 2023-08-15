@@ -27,7 +27,7 @@ async def handler():
     if websocket.headers.get("Origin") != ORIGIN:
         return "Unauthorized", 401
 
-    client_id = request.headers.get("oidc_claim_user_id")
+    client_id = websocket.headers.get("oidc_claim_user_id")
     if not client_id:
         return "Unauthorized", 401
 
