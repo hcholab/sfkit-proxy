@@ -10,6 +10,8 @@ import (
 
 	"github.com/hcholab/sfkit-proxy/auth"
 	"github.com/pion/ice/v2"
+	"github.com/pion/stun"
+	"golang.org/x/exp/slices"
 	"golang.org/x/exp/slog"
 	"golang.org/x/net/websocket"
 )
@@ -48,8 +50,40 @@ const (
 	idRunes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 )
 
+var (
+	defaultSTUNServers = []string{
+		// TODO can we rely on Google?
+		"stun:stun.l.google.com:19302",
+		"stun:stun1.l.google.com:19302",
+		"stun:stun2.l.google.com:19302",
+		"stun:stun3.l.google.com:19302",
+		"stun:stun4.l.google.com:19302",
+
+		// from Syncthing, should be reliable
+		"stun:stun.syncthing.net:3478",
+		"stun:stun.callwithus.com:3478",
+		"stun:stun.counterpath.com:3478",
+		"stun:stun.counterpath.net:3478",
+		"stun:stun.ekiga.net:3478",
+		"stun:stun.ideasip.com:3478",
+		"stun:stun.internetcalls.com:3478",
+		"stun:stun.schlund.de:3478",
+		"stun:stun.sipgate.net:10000",
+		"stun:stun.sipgate.net:3478",
+		"stun:stun.voip.aebc.com:3478",
+		"stun:stun.voiparound.com:3478",
+		"stun:stun.voipbuster.com:3478",
+		"stun:stun.voipstunt.com:3478",
+		"stun:stun.xten.com:3478",
+	}
+)
+
+func DefaultSTUNServers() []string {
+	return slices.Clone(defaultSTUNServers)
+}
+
 // Based on https://github.com/pion/ice/tree/master/examples/ping-pong
-func NewService(ctx context.Context, api *url.URL, studyID string) (s *Service, err error) {
+func NewService(ctx context.Context, api *url.URL, stunURIs []string, studyID string) (s *Service, err error) {
 	s = &Service{studyID: studyID}
 
 	// connect to the signaling API via WebSocket
@@ -71,7 +105,7 @@ func NewService(ctx context.Context, api *url.URL, studyID string) (s *Service, 
 	}
 
 	// initialize the ICE agent
-	if err = s.createICEAgent(); err != nil {
+	if err = s.createICEAgent(stunURIs); err != nil {
 		return
 	}
 
@@ -118,10 +152,10 @@ func (s *Service) sendStudyID() (err error) {
 		Type:    MessageTypeStudy,
 		StudyID: s.studyID,
 	}); err != nil {
-		err = fmt.Errorf("sending initial signaling message: %s", err.Error())
+		err = fmt.Errorf("sending study ID: %s", err.Error())
 		return
 	}
-	slog.Debug("Sent initial signaling message")
+	slog.Debug("Sent study ID")
 	return
 }
 
@@ -150,12 +184,29 @@ func (s *Service) getClientID() (err error) {
 	return
 }
 
-func (s *Service) createICEAgent() (err error) {
+func (s *Service) createICEAgent(rawStunURIs []string) (err error) {
+	urls, err := parseStunURIs(rawStunURIs)
+	if err != nil {
+		return
+	}
 	s.a, err = ice.NewAgent(&ice.AgentConfig{
+		Urls:         urls,
 		NetworkTypes: []ice.NetworkType{ice.NetworkTypeUDP4},
 	})
 	if err != nil {
 		slog.Debug("Created ICE agent")
+	}
+	return
+}
+
+func parseStunURIs(rawURIs []string) (uris []*stun.URI, err error) {
+	for _, u := range rawURIs {
+		var uri *stun.URI
+		uri, err = stun.ParseURI(u)
+		if err != nil {
+			return
+		}
+		uris = append(uris, uri)
 	}
 	return
 }

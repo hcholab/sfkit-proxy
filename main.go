@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net/url"
 	"os"
 	"os/signal"
@@ -12,7 +13,6 @@ import (
 	"github.com/hcholab/sfkit-proxy/ice"
 	"github.com/hcholab/sfkit-proxy/logging"
 	"github.com/hcholab/sfkit-proxy/quic"
-	stun "github.com/hcholab/sfkit-proxy/stun2"
 	"golang.org/x/exp/slog"
 	"golang.org/x/sync/errgroup"
 )
@@ -30,7 +30,7 @@ import (
 type Args struct {
 	ListenURI       *url.URL
 	SignalServerURI *url.URL
-	StunServerURIs  []stun.URI
+	StunServerURIs  []string
 	StudyID         string
 	Verbose         bool
 }
@@ -38,11 +38,11 @@ type Args struct {
 func parseArgs() (args Args, err error) {
 	listenURI := "udp://0.0.0.0:0"
 	signalServerURI := "ws://host.docker.internal:8000/api/ice" // TODO change default for Terra
-	stunServers := strings.Join(stun.DefaultServers(), ",")
+	stunServers := strings.Join(ice.DefaultSTUNServers(), ",")
 
 	flag.StringVar(&signalServerURI, "api", signalServerURI, "ICE signaling server API")
 	flag.StringVar(&listenURI, "listen", listenURI, "Local listener URI")
-	flag.StringVar(&stunServers, "stun", stunServers, "Comma-separated list of STUN server URIs, in the order of preference")
+	flag.StringVar(&stunServers, "stun", stunServers, "Comma-separated list of STUN/TURN server URIs, in the order of preference")
 
 	flag.StringVar(&args.StudyID, "study", "", "Study ID")
 	flag.BoolVar(&args.Verbose, "v", false, "Verbose output")
@@ -55,7 +55,9 @@ func parseArgs() (args Args, err error) {
 	if args.SignalServerURI, err = url.Parse(signalServerURI); err != nil {
 		return
 	}
-	args.StunServerURIs, err = stun.ParseServers(strings.Split(stunServers, ","))
+	if args.StunServerURIs = strings.Split(stunServers, ","); len(args.StunServerURIs) == 0 {
+		err = fmt.Errorf("List of STUN/TURN servers must be non-empty")
+	}
 	return
 }
 
@@ -87,7 +89,7 @@ func run() (exitCode int, err error) {
 	}
 	defer quicSvc.Stop()
 
-	iceSvc, err := ice.NewService(ctx, args.SignalServerURI, args.StudyID)
+	iceSvc, err := ice.NewService(ctx, args.SignalServerURI, args.StunServerURIs, args.StudyID)
 	if err != nil {
 		return
 	}
