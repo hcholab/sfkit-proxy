@@ -1,1 +1,2 @@
-quart
+httpx
+quart; python_version >= '3.11'
