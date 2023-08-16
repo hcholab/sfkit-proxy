@@ -107,26 +107,28 @@ async def handler():
         # using a study-specific barrier,
         # wait until all participants in a study are connected,
         # and then initiate the ICE protocol for it
-        async with study_barriers.setdefault(study_id, asyncio.Barrier(len(study))):
+        barrier = study_barriers.setdefault(study_id, asyncio.Barrier(len(study)))
+        async with barrier as party:
             await Message(MessageType.CONNECTED, clientId=client_id).send()
-            print("All clients have connected:", clients.keys())
+            if party == 0:
+                print("All clients have connected:", ", ".join(clients.keys()))
 
             while True:
                 # read the next message and override its client ID
                 # (could be of type 'candidate' or 'credential')
                 msg = await websocket.receive_json()
                 msg["clientId"] = client_id
-                print(f"Received: {msg}")
 
                 # and broadcast it to all of the other participants
                 await asyncio.gather(
                     *(send(msg) for cid, send in clients.items() if cid != client_id)
                 )
-                print(f"Broadcast: {msg}")
+                print(f"Broadcast received message: {msg}")
     except Exception as e:
         print(f"Terminal error in client {client_id} connection: {e}")
     finally:
         del clients[client_id]
+        print(f"Client {client_id} disconnected from study {study_id}")
 
 
 async def get_subject_id():
