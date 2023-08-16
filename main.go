@@ -16,16 +16,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// type Subscriber struct{}
-
-// func (s *Subscriber) OnNATTypeChanged(natType stun.NATType) {
-// 	slog.Info("OnNATTypeChanged():", "natType", natType)
-// }
-
-// func (s *Subscriber) OnExternalAddressChanged(address *stun.Host, via string) {
-// 	slog.Info("OnExternalAddressChanged():", "address", address.String(), "via", via)
-// }
-
 type Args struct {
 	ListenURI       *url.URL
 	SignalServerURI *url.URL
@@ -94,27 +84,6 @@ func run() (exitCode int, err error) {
 		return
 	}
 	defer iceSvc.Stop()
-
-	// stunSvc, err := stun.NewService(ctx, args.StunServerURIs, errs, quicSvc.Connection())
-	// if err != nil {
-	// 	return
-	// }
-	// defer stunSvc.Stop()
-
-	// uri, err := url.Parse("quic://0.0.0.0:0")
-	// if err != nil {
-	// 	log.Fatal("Error parsing the URL: ", err)
-	// }
-	// cfg := &stun.Config{
-	// 	NATEnabled:          true,
-	// 	StunKeepaliveStartS: 180,
-	// 	StunKeepaliveMinS:   20,
-	// 	RawStunServers:      []string{"default"},
-	// }
-	// err = stun.Serve(ctx, uri, cfg, &Subscriber{})
-	// if err != nil {
-	// 	log.Fatal("Error in STUN service: ", err)
-	// }
 
 	exitCh := handleSignals(ctx, cancel)
 	if err = errs.Wait(); err != nil {
