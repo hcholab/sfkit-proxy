@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/hcholab/sfkit-proxy/ice"
 	"github.com/hcholab/sfkit-proxy/logging"
 	"github.com/hcholab/sfkit-proxy/quic"
 	stun "github.com/hcholab/sfkit-proxy/stun2"
@@ -27,21 +28,31 @@ import (
 // }
 
 type Args struct {
-	ListenURI      *url.URL
-	StunServerURIs []stun.URI
-	Verbose        bool
+	ListenURI       *url.URL
+	SignalServerURI *url.URL
+	StunServerURIs  []stun.URI
+	StudyID         string
+	Verbose         bool
 }
 
 func parseArgs() (args Args, err error) {
-	listenAddr := "udp://0.0.0.0:0"
+	listenURI := "udp://0.0.0.0:0"
+	signalServerURI := "ws://host.docker.internal:8000/api/ice" // TODO change default for Terra
 	stunServers := strings.Join(stun.DefaultServers(), ",")
 
-	flag.StringVar(&listenAddr, "a", listenAddr, "Server URI")
-	flag.StringVar(&stunServers, "s", stunServers, "Comma-separated list of STUN server URIs, in the order of preference")
+	flag.StringVar(&signalServerURI, "api", signalServerURI, "ICE signaling server API")
+	flag.StringVar(&listenURI, "listen", listenURI, "Local listener URI")
+	flag.StringVar(&stunServers, "stun", stunServers, "Comma-separated list of STUN server URIs, in the order of preference")
+
+	flag.StringVar(&args.StudyID, "study", "", "Study ID")
 	flag.BoolVar(&args.Verbose, "v", false, "Verbose output")
+
 	flag.Parse()
 
-	if args.ListenURI, err = url.Parse(listenAddr); err != nil {
+	if args.ListenURI, err = url.Parse(listenURI); err != nil {
+		return
+	}
+	if args.SignalServerURI, err = url.Parse(signalServerURI); err != nil {
 		return
 	}
 	args.StunServerURIs, err = stun.ParseServers(strings.Split(stunServers, ","))
@@ -76,11 +87,17 @@ func run() (exitCode int, err error) {
 	}
 	defer quicSvc.Stop()
 
-	stunSvc, err := stun.NewService(ctx, args.StunServerURIs, errs, quicSvc.Connection())
+	iceSvc, err := ice.NewService(ctx, args.SignalServerURI, args.StudyID)
 	if err != nil {
 		return
 	}
-	defer stunSvc.Stop()
+	defer iceSvc.Stop()
+
+	// stunSvc, err := stun.NewService(ctx, args.StunServerURIs, errs, quicSvc.Connection())
+	// if err != nil {
+	// 	return
+	// }
+	// defer stunSvc.Stop()
 
 	// uri, err := url.Parse("quic://0.0.0.0:0")
 	// if err != nil {
