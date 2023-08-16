@@ -191,8 +191,11 @@ func (s *Service) createICEAgent(rawStunURIs []string) (err error) {
 		return
 	}
 	s.a, err = ice.NewAgent(&ice.AgentConfig{
-		Urls:         urls,
-		NetworkTypes: []ice.NetworkType{ice.NetworkTypeUDP4},
+		Urls: urls,
+		NetworkTypes: []ice.NetworkType{
+			ice.NetworkTypeUDP4,
+			ice.NetworkTypeUDP6,
+		},
 	})
 	if err != nil {
 		slog.Debug("Created ICE agent")
