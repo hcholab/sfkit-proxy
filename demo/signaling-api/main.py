@@ -30,9 +30,11 @@ if DEMO:
 
 
 class MessageType(Enum):
+    STUDY = "study"
     CONNECTED = "connected"
+    CANDIDATE = "candidate"
+    CREDENTIAL = "credential"
     ERROR = "error"
-
 
 @dataclass
 class Message:
@@ -46,9 +48,14 @@ class Message:
         for key, value in msg.items():
             if isinstance(value, Enum):
                 msg[key] = value.value
-
         await ws.send_json(msg)
-        print(f"Sent", msg)
+
+    @staticmethod
+    async def receive():
+        msg = await websocket.receive_json()
+        print("Received", msg)
+        msg['type'] = MessageType(msg['type'])
+        return Message(**msg)
 
 
 @app.websocket("/api/ice")
@@ -68,8 +75,11 @@ async def handler():
         return "Unauthorized", 401
 
     # receive the first message containing the study ID
-    msg = await websocket.receive_json()
-    study_id = msg["studyId"]
+    msg = await Message.receive()
+    if msg.type != MessageType.STUDY:
+        await Message(MessageType.ERROR, "Wrong message type; expected 'study'").send()
+        return "Bad Request", 400
+    study_id = msg.studyId
     if not study_id:
         await Message(MessageType.ERROR, "Missing study ID").send()
         return "Bad Request", 400
@@ -98,8 +108,8 @@ async def handler():
     try:
         # store the current websocket send method for the client
         @copy_current_websocket_context
-        async def ws_send(msg: dict):
-            await websocket.send_json(msg)
+        async def ws_send(msg: Message):
+            await msg.send()
 
         clients[client_id] = ws_send
         print(f"Registered websocket for client {client_id}")
@@ -116,14 +126,13 @@ async def handler():
             while True:
                 # read the next message and override its client ID
                 # (could be of type 'candidate' or 'credential')
-                msg = await websocket.receive_json()
-                msg["clientId"] = client_id
+                msg = await Message.receive()
+                msg.clientId = client_id
 
                 # and broadcast it to all of the other participants
                 await asyncio.gather(
                     *(send(msg) for cid, send in clients.items() if cid != client_id)
                 )
-                print(f"Broadcast received message: {msg}")
     except Exception as e:
         print(f"Terminal error in client {client_id} connection: {e}")
     finally:
