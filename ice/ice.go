@@ -21,6 +21,7 @@ type Service struct {
 	cid     string
 	studyID string
 	ws      *websocket.Conn
+	conn    *ice.Conn
 }
 
 type MessageType string
@@ -320,7 +321,8 @@ func (s *Service) handleRemoteCandidate(msg Message) {
 
 func (s *Service) handleRemoteCredential(msg Message) {
 	var cred Credential
-	if err := json.Unmarshal([]byte(msg.Data), &cred); err != nil {
+	var err error
+	if err = json.Unmarshal([]byte(msg.Data), &cred); err != nil {
 		slog.Error("Unmarshalling remote credential:", "msg.Data", msg.Data)
 		return
 	}
@@ -332,12 +334,11 @@ func (s *Service) handleRemoteCredential(msg Message) {
 	} else {
 		slog.Debug("Accepting ICE connection:", "remoteID", msg.ClientID)
 	}
-	conn, err := iceOp(context.TODO(), cred.Ufrag, cred.Pwd)
-	if err != nil {
+	if s.conn, err = iceOp(context.TODO(), cred.Ufrag, cred.Pwd); err != nil {
 		slog.Error("ICE operation:", "err", err)
 		return
 	}
-	slog.Debug("Established ICE connection:", "localAddr", conn.LocalAddr(), "remoteAddr", conn.RemoteAddr())
+	slog.Debug("Established ICE connection:", "localAddr", s.conn.LocalAddr(), "remoteAddr", s.conn.RemoteAddr())
 }
 
 func getAuthHeader(ctx context.Context) (header string, err error) {
