@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"net/url"
 	"os"
 	"os/signal"
@@ -55,8 +54,9 @@ func parseArgs() (args Args, err error) {
 	if args.SignalServerURI, err = url.Parse(signalServerURI); err != nil {
 		return
 	}
-	if args.StunServerURIs = strings.Split(stunServers, ","); len(args.StunServerURIs) == 0 {
-		err = fmt.Errorf("List of STUN/TURN servers must be non-empty")
+	args.StunServerURIs = strings.Split(stunServers, ",")
+	if args.StunServerURIs[0] == "" {
+		args.StunServerURIs = nil
 	}
 	return
 }
