@@ -89,7 +89,7 @@ func run() (exitCode int, err error) {
 	}
 	defer quicSvc.Stop()
 
-	iceSvc, err := ice.NewService(ctx, args.SignalServerURI, args.StunServerURIs, args.StudyID)
+	iceSvc, err := ice.NewService(ctx, args.SignalServerURI, args.StunServerURIs, args.StudyID, quicSvc.Connection())
 	if err != nil {
 		return
 	}

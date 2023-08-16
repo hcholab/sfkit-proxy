@@ -124,7 +124,7 @@ func (c *Connection) Read(p []byte) (n int, err error) {
 		err = checkLogError(fmt.Errorf("no underlying QUIC connection"))
 		return
 	}
-	if n, err = c.qconn.Read(p); err == nil && !stun.IsMessage(p) {
+	if n, _, err = c.qconn.Read(p); err == nil && !stun.IsMessage(p) {
 		err = checkLogError(fmt.Errorf("not a STUN packet: %s", p))
 	}
 	if err != nil {

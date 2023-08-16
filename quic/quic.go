@@ -122,14 +122,16 @@ type Connection struct {
 	tr  *quic.Transport
 }
 
-func (c *Connection) Read(p []byte) (n int, err error) {
-	if n, _, err = c.tr.ReadNonQUICPacket(c.ctx, p); err != nil {
+func (c *Connection) GetListenAddress() net.Addr {
+	return c.tr.Conn.LocalAddr()
+}
+
+func (c *Connection) Read(p []byte) (n int, addr net.Addr, err error) {
+	if n, addr, err = c.tr.ReadNonQUICPacket(c.ctx, p); err != nil {
 		// TODO handle fully
 		if err != context.Canceled {
 			slog.Error("Receiving non-QUIC packet:", "err", err)
 		}
-	} else {
-		slog.Debug("Received a non-QUIC packet:", "bytes", string(p)) // TODO remove
 	}
 	return
 }

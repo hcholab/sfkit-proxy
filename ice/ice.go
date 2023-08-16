@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/hcholab/sfkit-proxy/auth"
+	"github.com/hcholab/sfkit-proxy/quic"
 	"github.com/pion/ice/v2"
 	"github.com/pion/stun"
 	"golang.org/x/exp/slices"
@@ -84,7 +85,7 @@ func DefaultSTUNServers() []string {
 }
 
 // Based on https://github.com/pion/ice/tree/master/examples/ping-pong
-func NewService(ctx context.Context, api *url.URL, stunURIs []string, studyID string) (s *Service, err error) {
+func NewService(ctx context.Context, api *url.URL, stunURIs []string, studyID string, qconn *quic.Connection) (s *Service, err error) {
 	s = &Service{studyID: studyID}
 
 	// connect to the signaling API via WebSocket
@@ -106,7 +107,7 @@ func NewService(ctx context.Context, api *url.URL, stunURIs []string, studyID st
 	}
 
 	// initialize the ICE agent
-	if err = s.createICEAgent(stunURIs); err != nil {
+	if err = s.createICEAgent(ctx, stunURIs, qconn); err != nil {
 		return
 	}
 
@@ -161,7 +162,6 @@ func (s *Service) sendStudyID() (err error) {
 }
 
 func (s *Service) isControlling(remoteCID string) bool {
-	slog.Debug("Comparing client IDs:", "local", s.cid, "remote", remoteCID)
 	return s.cid > remoteCID
 }
 
@@ -185,7 +185,7 @@ func (s *Service) getClientID() (err error) {
 	return
 }
 
-func (s *Service) createICEAgent(rawStunURIs []string) (err error) {
+func (s *Service) createICEAgent(ctx context.Context, rawStunURIs []string, qconn *quic.Connection) (err error) {
 	urls, err := parseStunURIs(rawStunURIs)
 	if err != nil {
 		return
@@ -196,6 +196,12 @@ func (s *Service) createICEAgent(rawStunURIs []string) (err error) {
 			ice.NetworkTypeUDP4,
 			ice.NetworkTypeUDP6,
 		},
+		UDPMux: ice.NewUDPMuxDefault(ice.UDPMuxParams{
+			UDPConn: newPacketConn(ctx, qconn),
+		}),
+		UDPMuxSrflx: ice.NewUniversalUDPMuxDefault(ice.UniversalUDPMuxParams{
+			UDPConn: newPacketConn(ctx, qconn),
+		}),
 	})
 	if err != nil {
 		slog.Debug("Created ICE agent")
