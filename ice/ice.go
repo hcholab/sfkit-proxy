@@ -248,7 +248,7 @@ func (s *Service) setupNewCandidateHandler() (err error) {
 func (s *Service) setupConnectionStateHandler() (err error) {
 	// TODO handle properly
 	if err = s.a.OnConnectionStateChange(func(c ice.ConnectionState) {
-		slog.Info("ICE Connection State has changed", "state", c)
+		slog.Debug("ICE Connection State has changed", "state", c)
 	}); err != nil {
 		return
 	}
@@ -304,12 +304,13 @@ func (s *Service) listenForSignals(ctx context.Context) {
 		switch t := msg.Type; t {
 		case MessageTypeCandidate:
 			s.handleRemoteCandidate(msg)
-
 		case MessageTypeCredential:
 			// TODO offload through a channel, to ensure processing order
 			go s.handleRemoteCredential(msg)
+		case MessageTypeError:
+			slog.Error("Signaling error: " + msg.Data)
 		default:
-			slog.Error("Unknown", "msg.Type", t, "msg", msg)
+			slog.Error("Unknown", "msg.type", t, "msg", msg)
 		}
 	}
 }
@@ -347,7 +348,7 @@ func (s *Service) handleRemoteCredential(msg Message) {
 		slog.Error("ICE operation:", "err", err)
 		return
 	}
-	slog.Debug("Established ICE connection:", "localAddr", s.conn.LocalAddr(), "remoteAddr", s.conn.RemoteAddr())
+	slog.Info("Established ICE connection:", "localAddr", s.conn.LocalAddr(), "remoteAddr", s.conn.RemoteAddr())
 }
 
 func getAuthHeader(ctx context.Context) (header string, err error) {
