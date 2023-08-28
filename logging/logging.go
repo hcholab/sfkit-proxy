@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"strings"
 
 	"github.com/fatih/color"
-	"golang.org/x/exp/slog"
 )
 
 type prettyHandlerOptions struct {

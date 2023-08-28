@@ -4,15 +4,13 @@ import (
 	"context"
 	"crypto/tls"
 	"io"
+	"log/slog"
 	"net"
 	"net/url"
 	"time"
 
 	"github.com/quic-go/quic-go"
 	"golang.org/x/sync/errgroup"
-
-	// TODO replace with native slog in Go 1.21
-	"golang.org/x/exp/slog"
 )
 
 type Service struct {

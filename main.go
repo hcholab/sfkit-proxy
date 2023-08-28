@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"log/slog"
 	"net/url"
 	"os"
 	"os/signal"
@@ -12,7 +13,6 @@ import (
 	"github.com/hcholab/sfkit-proxy/ice"
 	"github.com/hcholab/sfkit-proxy/logging"
 	"github.com/hcholab/sfkit-proxy/quic"
-	"golang.org/x/exp/slog"
 	"golang.org/x/sync/errgroup"
 )
 

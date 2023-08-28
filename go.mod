@@ -1,6 +1,6 @@
 module github.com/hcholab/sfkit-proxy
 
-go 1.20
+go 1.21
 
 require (
 	github.com/AudriusButkevicius/pfilter v0.0.11

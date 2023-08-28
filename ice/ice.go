@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"strings"
 
@@ -13,7 +14,6 @@ import (
 	"github.com/pion/ice/v2"
 	"github.com/pion/stun"
 	"golang.org/x/exp/slices"
-	"golang.org/x/exp/slog"
 	"golang.org/x/net/websocket"
 )
 

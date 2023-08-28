@@ -2,10 +2,10 @@ package auth
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"golang.org/x/exp/slog"
 	"golang.org/x/oauth2/google"
 )
 
