@@ -5,41 +5,46 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/url"
 	"strings"
 
-	"github.com/hcholab/sfkit-proxy/auth"
-	"github.com/hcholab/sfkit-proxy/quic"
+	"log/slog"
+
 	"github.com/pion/ice/v2"
 	"github.com/pion/stun"
 	"golang.org/x/exp/slices"
 	"golang.org/x/net/websocket"
+
+	"github.com/hcholab/sfkit-proxy/auth"
+	"github.com/hcholab/sfkit-proxy/conn"
+	"github.com/hcholab/sfkit-proxy/mpc"
 )
 
 type Service struct {
-	a       *ice.Agent
-	cid     string
-	studyID string
-	ws      *websocket.Conn
-	conn    *ice.Conn
+	mpc      *mpc.Config
+	studyID  string
+	stunURIs []*stun.URI
+	ws       *websocket.Conn
+
+	// keeps track of all connections to be closed
+	conns []*ice.Conn
+	a     int // test remove
 }
 
 type MessageType string
 
 const (
-	MessageTypeStudy      MessageType = "study"
-	MessageTypeConnected  MessageType = "connected"
 	MessageTypeCandidate  MessageType = "candidate"
 	MessageTypeCredential MessageType = "credential"
 	MessageTypeError      MessageType = "error"
 )
 
 type Message struct {
-	ClientID string      `json:"clientId"`
-	StudyID  string      `json:"studyId"`
-	Type     MessageType `json:"type"`
-	Data     string      `json:"data"`
+	StudyID   string      `json:"studyID"`
+	Type      MessageType `json:"type"`
+	Data      string      `json:"data"`
+	SourcePID mpc.PID     `json:"sourcePID"`
+	TargetPID mpc.PID     `json:"targetPID"`
 }
 
 type Credential struct {
@@ -48,162 +53,150 @@ type Credential struct {
 }
 
 const (
+	authHeader    = "Authorization"
+	studyIDHeader = "X-MPC-Study-ID"
+
 	idLen   = 15
 	idRunes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 )
 
-var (
-	defaultSTUNServers = []string{
-		// TODO can we rely on Google?
-		"stun:stun.l.google.com:19302",
-		"stun:stun1.l.google.com:19302",
-		"stun:stun2.l.google.com:19302",
-		"stun:stun3.l.google.com:19302",
-		"stun:stun4.l.google.com:19302",
+var defaultSTUNServers = []string{
+	// TODO can we rely on Google?
+	"stun:stun.l.google.com:19302",
+	// "stun:stun1.l.google.com:19302",
+	// "stun:stun2.l.google.com:19302",
+	// "stun:stun3.l.google.com:19302",
+	// "stun:stun4.l.google.com:19302",
 
-		// from Syncthing, should be reliable
-		"stun:stun.syncthing.net:3478",
-		"stun:stun.callwithus.com:3478",
-		"stun:stun.counterpath.com:3478",
-		"stun:stun.counterpath.net:3478",
-		"stun:stun.ekiga.net:3478",
-		"stun:stun.ideasip.com:3478",
-		"stun:stun.internetcalls.com:3478",
-		"stun:stun.schlund.de:3478",
-		"stun:stun.sipgate.net:10000",
-		"stun:stun.sipgate.net:3478",
-		"stun:stun.voip.aebc.com:3478",
-		"stun:stun.voiparound.com:3478",
-		"stun:stun.voipbuster.com:3478",
-		"stun:stun.voipstunt.com:3478",
-		"stun:stun.xten.com:3478",
-	}
-)
+	// from Syncthing, should be reliable
+	// "stun:stun.syncthing.net:3478",
+	// "stun:stun.callwithus.com:3478",
+	// "stun:stun.counterpath.com:3478",
+	// "stun:stun.counterpath.net:3478",
+	// "stun:stun.ekiga.net:3478",
+	// "stun:stun.ideasip.com:3478",
+	// "stun:stun.internetcalls.com:3478",
+	// "stun:stun.schlund.de:3478",
+	// "stun:stun.sipgate.net:10000",
+	// "stun:stun.sipgate.net:3478",
+	// "stun:stun.voip.aebc.com:3478",
+	// "stun:stun.voiparound.com:3478",
+	// "stun:stun.voipbuster.com:3478",
+	// "stun:stun.voipstunt.com:3478",
+	// "stun:stun.xten.com:3478",
+}
 
 func DefaultSTUNServers() []string {
 	return slices.Clone(defaultSTUNServers)
 }
 
-// Based on https://github.com/pion/ice/tree/master/examples/ping-pong
-func NewService(ctx context.Context, api *url.URL, stunURIs []string, studyID string, qconn *quic.Connection) (s *Service, err error) {
-	s = &Service{studyID: studyID}
+func NewService(
+	ctx context.Context,
+	api *url.URL,
+	rawStunURIs []string,
+	studyID string,
+	mpcConf *mpc.Config,
+) (s *Service, err error) {
+	s = &Service{
+		conns:   make([]*ice.Conn, 0, len(mpcConf.PeerPIDs)),
+		mpc:     mpcConf,
+		studyID: studyID,
+	}
+
+	// parse stun URIs
+	s.stunURIs, err = parseStunURIs(rawStunURIs)
+	if err != nil {
+		return
+	}
 
 	// connect to the signaling API via WebSocket
+	// and return once all clients are connected
+	// and ready to initiate the ICE protocol
+	//
 	// TODO implement reconnect
-	if err = s.connectWebSocket(ctx, api); err != nil {
+	if err = s.connectWebSocket(ctx, api, studyID); err != nil {
 		return
 	}
 
-	// send study ID to the signaling server
-	if err = s.sendStudyID(); err != nil {
-		return
-	}
+	slog.Debug("Started ICE service")
+	return
+}
 
-	// receive client ID from the signaling server;
-	// this also ensures all clients are now connected,
-	// and are thus ready to initiate the ICE protocol
-	if err = s.getClientID(); err != nil {
+// GetPacketConn establishes an ICE-managed connection with a peer,
+// and returns a *conn.PacketConn channel, which allows the client
+// to subscribe to changes in the connection.
+//
+// Based on https://github.com/pion/ice/tree/master/examples/ping-pong
+func (s *Service) GetConn(
+	ctx context.Context,
+	peerPID mpc.PID,
+) (_ <-chan *conn.PacketConn, err error) {
+	conns := make(chan *conn.PacketConn, 1)
+
+	if peerPID == s.mpc.LocalPID {
+		err = fmt.Errorf("cannot connect to self")
 		return
 	}
 
 	// initialize the ICE agent
-	if err = s.createICEAgent(ctx, stunURIs, qconn); err != nil {
+	a, err := createICEAgent(s.stunURIs)
+	if err != nil {
 		return
 	}
+	a.Close()
 
 	// start listening for ICE signaling messages
-	go s.listenForSignals(ctx)
+	go s.listenForSignals(ctx, a, conns)
 
 	// when we have gathered a new ICE Candidate, send it to the remote peer(s)
-	if err = s.setupNewCandidateHandler(); err != nil {
+	if err = s.setupNewCandidateHandler(a, peerPID); err != nil {
 		return
 	}
 
 	// handle ICE connection state changes
-	if err = s.setupConnectionStateHandler(); err != nil {
+	if err = setupConnectionStateHandler(a); err != nil {
 		return
 	}
 
 	// get the local auth credentials and send them to remote peer(s)
-	if err = s.sendLocalCredentials(); err != nil {
+	if err = s.sendLocalCredentials(a, peerPID); err != nil {
 		return
 	}
 
 	// start trickle ICE candidate gathering process
-	err = s.a.GatherCandidates()
-	return
+	slog.Debug("Gathering ICE candidates for", "peer", peerPID)
+	return conns, a.GatherCandidates()
 }
 
-func (s *Service) connectWebSocket(ctx context.Context, api *url.URL) (err error) {
+func (s *Service) connectWebSocket(ctx context.Context, api *url.URL, studyID string) (err error) {
 	originURL := url.URL{Scheme: api.Scheme, Host: api.Host}
 	wsConfig, err := websocket.NewConfig(api.String(), originURL.String())
 	if err != nil {
 		return
 	}
-	authHeader, err := getAuthHeader(ctx)
+
+	auth, err := getAuthHeader(ctx)
 	if err != nil {
 		return
 	}
-	wsConfig.Header.Add("Authorization", authHeader)
+	h := wsConfig.Header
+	h.Add(authHeader, auth)
+	h.Add(studyIDHeader, studyID)
+
+	slog.Info("Waiting for all parties to connect")
 	s.ws, err = websocket.DialConfig(wsConfig)
 	return
 }
 
-func (s *Service) sendStudyID() (err error) {
-	if err = websocket.JSON.Send(s.ws, Message{
-		Type:    MessageTypeStudy,
-		StudyID: s.studyID,
-	}); err != nil {
-		err = fmt.Errorf("sending study ID: %s", err.Error())
-		return
-	}
-	slog.Debug("Sent study ID")
-	return
-}
-
-func (s *Service) isControlling(remoteCID string) bool {
-	return s.cid > remoteCID
-}
-
-func (s *Service) getClientID() (err error) {
-	var msg Message
-	if err = websocket.JSON.Receive(s.ws, &msg); err != nil {
-		err = fmt.Errorf("receiving Connected message: %s", err.Error())
-		return
-	}
-	switch msg.Type {
-	case MessageTypeConnected: // good
-	case MessageTypeError:
-		err = fmt.Errorf("receiving Connected message: %s", msg.Data)
-		return
-	default:
-		err = fmt.Errorf("unexpected Connected message type: %s, msg: %+v", msg.Type, msg)
-		return
-	}
-	s.cid = msg.ClientID
-	slog.Debug("Obtained:", "clientID", s.cid)
-	return
-}
-
-func (s *Service) createICEAgent(ctx context.Context, rawStunURIs []string, qconn *quic.Connection) (err error) {
-	urls, err := parseStunURIs(rawStunURIs)
-	if err != nil {
-		return
-	}
-	s.a, err = ice.NewAgent(&ice.AgentConfig{
-		Urls: urls,
+func createICEAgent(stunURIs []*stun.URI) (a *ice.Agent, err error) {
+	a, err = ice.NewAgent(&ice.AgentConfig{
+		Urls: stunURIs,
 		NetworkTypes: []ice.NetworkType{
 			ice.NetworkTypeUDP4,
 			ice.NetworkTypeUDP6,
 		},
-		UDPMux: ice.NewUDPMuxDefault(ice.UDPMuxParams{
-			UDPConn: newPacketConn(ctx, qconn),
-		}),
-		UDPMuxSrflx: ice.NewUniversalUDPMuxDefault(ice.UniversalUDPMuxParams{
-			UDPConn: newPacketConn(ctx, qconn),
-		}),
 	})
-	if err != nil {
+	if err == nil {
 		slog.Debug("Created ICE agent")
 	}
 	return
@@ -221,22 +214,24 @@ func parseStunURIs(rawURIs []string) (uris []*stun.URI, err error) {
 	return
 }
 
-func (s *Service) setupNewCandidateHandler() (err error) {
-	if err = s.a.OnCandidate(func(c ice.Candidate) {
+func (s *Service) setupNewCandidateHandler(a *ice.Agent, targetPID mpc.PID) (err error) {
+	if err = a.OnCandidate(func(c ice.Candidate) {
 		if c == nil {
 			return
 		}
 		slog.Debug("Gathered ICE candidate:", "candidate", c)
 		msg := Message{
-			ClientID: s.cid, // not authoritative, but useful for debugging
-			StudyID:  s.studyID,
-			Type:     MessageTypeCandidate,
-			Data:     c.Marshal(),
+			// IDs are not authoritative, but useful for debugging
+			SourcePID: s.mpc.LocalPID,
+			StudyID:   s.studyID,
+			TargetPID: targetPID,
+			Type:      MessageTypeCandidate,
+			Data:      c.Marshal(),
 		}
-		if err := websocket.JSON.Send(s.ws, msg); err != nil {
+		if e := websocket.JSON.Send(s.ws, msg); e != nil {
 			slog.Error(err.Error())
 		} else {
-			slog.Debug("Sent signaling message:", "msg", msg)
+			slog.Debug("Sent ICE candidate:", "msg", msg)
 		}
 	}); err != nil {
 		return
@@ -245,9 +240,9 @@ func (s *Service) setupNewCandidateHandler() (err error) {
 	return
 }
 
-func (s *Service) setupConnectionStateHandler() (err error) {
+func setupConnectionStateHandler(a *ice.Agent) (err error) {
 	// TODO handle properly
-	if err = s.a.OnConnectionStateChange(func(c ice.ConnectionState) {
+	if err = a.OnConnectionStateChange(func(c ice.ConnectionState) {
 		slog.Debug("ICE Connection State has changed", "state", c)
 	}); err != nil {
 		return
@@ -256,8 +251,9 @@ func (s *Service) setupConnectionStateHandler() (err error) {
 	return
 }
 
-func (s *Service) sendLocalCredentials() (err error) {
-	localUfrag, localPwd, err := s.a.GetLocalUserCredentials()
+func (s *Service) sendLocalCredentials(a *ice.Agent, targetPID mpc.PID) (err error) {
+	slog.Debug(">>>> Waiting for local ICE credentials", "targetPID", targetPID)
+	localUfrag, localPwd, err := a.GetLocalUserCredentials()
 	if err != nil {
 		err = fmt.Errorf("getting local ICE credentials: %s", err.Error())
 		return
@@ -272,10 +268,12 @@ func (s *Service) sendLocalCredentials() (err error) {
 		return
 	}
 	if err = websocket.JSON.Send(s.ws, Message{
-		ClientID: s.cid, // not authoritative, but useful for debugging
-		StudyID:  s.studyID,
-		Type:     MessageTypeCredential,
-		Data:     string(cred),
+		// Source and Study IDs are not authoritative, but useful for debugging
+		SourcePID: s.mpc.LocalPID,
+		StudyID:   s.studyID,
+		TargetPID: targetPID,
+		Type:      MessageTypeCredential,
+		Data:      string(cred),
 	}); err != nil {
 		err = fmt.Errorf("sending local ICE credentials: %s", err.Error())
 		return
@@ -286,42 +284,45 @@ func (s *Service) sendLocalCredentials() (err error) {
 
 type IceOp func(context.Context, string, string) (*ice.Conn, error)
 
-func (s *Service) listenForSignals(ctx context.Context) {
+func (s *Service) listenForSignals(
+	ctx context.Context,
+	a *ice.Agent,
+	conns chan<- *conn.PacketConn,
+) {
 	for {
 		var msg Message
 		if err := websocket.JSON.Receive(s.ws, &msg); err != nil {
-			slog.Error("Receiving signaling message", "err", err)
 			if err == io.EOF {
 				// TODO implement reconnect
 				return
 			} else if ctx.Err() == context.Canceled {
 				return
 			}
+			slog.Error("Receiving signaling message", "err", err)
 			continue
 		}
 		slog.Debug("Received signaling message:", "msg", msg)
 
 		switch t := msg.Type; t {
 		case MessageTypeCandidate:
-			s.handleRemoteCandidate(msg)
+			handleRemoteCandidate(a, msg.Data)
 		case MessageTypeCredential:
-			// TODO offload through a channel, to ensure processing order
-			go s.handleRemoteCredential(msg)
+			go s.handleRemoteCredential(a, msg, conns)
 		case MessageTypeError:
 			slog.Error("Signaling error: " + msg.Data)
 		default:
-			slog.Error("Unknown", "msg.type", t, "msg", msg)
+			slog.Error("Unknown", "msg.Type", t, "msg", msg)
 		}
 	}
 }
 
-func (s *Service) handleRemoteCandidate(msg Message) {
-	c, err := ice.UnmarshalCandidate(msg.Data)
+func handleRemoteCandidate(a *ice.Agent, candidate string) {
+	c, err := ice.UnmarshalCandidate(candidate)
 	if err != nil {
 		slog.Error("UnmarshalCandidate:", "err", err)
 		return
 	}
-	if err = s.a.AddRemoteCandidate(c); err != nil {
+	if err = a.AddRemoteCandidate(c); err != nil {
 		slog.Error("AddRemoteCandidate:", "err", err)
 		return
 	}
@@ -329,7 +330,7 @@ func (s *Service) handleRemoteCandidate(msg Message) {
 	return
 }
 
-func (s *Service) handleRemoteCredential(msg Message) {
+func (s *Service) handleRemoteCredential(a *ice.Agent, msg Message, conns chan<- *conn.PacketConn) {
 	var cred Credential
 	var err error
 	if err = json.Unmarshal([]byte(msg.Data), &cred); err != nil {
@@ -337,18 +338,27 @@ func (s *Service) handleRemoteCredential(msg Message) {
 		return
 	}
 	slog.Debug("Obtained remote", "cred", cred)
-	iceOp := s.a.Accept
-	if s.isControlling(msg.ClientID) {
-		slog.Debug("Dialing ICE candidate", "remoteID", msg.ClientID)
-		iceOp = s.a.Dial
+	iceOp := a.Accept
+	if s.mpc.IsClient(msg.SourcePID) {
+		slog.Debug("Dialing ICE candidate", "remotePID", msg.SourcePID)
+		iceOp = a.Dial
 	} else {
-		slog.Debug("Accepting ICE connection:", "remoteID", msg.ClientID)
+		slog.Debug("Accepting ICE connection:", "remotePID", msg.SourcePID)
 	}
-	if s.conn, err = iceOp(context.TODO(), cred.Ufrag, cred.Pwd); err != nil {
+	c, err := iceOp(context.TODO(), cred.Ufrag, cred.Pwd)
+	if err != nil {
 		slog.Error("ICE operation:", "err", err)
 		return
 	}
-	slog.Info("Established ICE connection:", "localAddr", s.conn.LocalAddr(), "remoteAddr", s.conn.RemoteAddr())
+	slog.Info(
+		"Established ICE connection:",
+		"localAddr",
+		c.LocalAddr(),
+		"remoteAddr",
+		c.RemoteAddr(),
+	)
+	s.conns = append(s.conns, c)
+	conns <- &conn.PacketConn{Conn: c}
 }
 
 func getAuthHeader(ctx context.Context) (header string, err error) {
@@ -361,9 +371,12 @@ func getAuthHeader(ctx context.Context) (header string, err error) {
 }
 
 func (s *Service) Stop() (err error) {
-	errs := make([]string, 0, 2)
-	if err = s.a.Close(); err != nil {
-		errs = append(errs, err.Error())
+	slog.Warn("Stopping ICE service")
+	var errs []string
+	for _, c := range s.conns {
+		if err = c.Close(); err != nil && err != ice.ErrClosed {
+			errs = append(errs, err.Error())
+		}
 	}
 	if err = s.ws.Close(); err != nil {
 		errs = append(errs, err.Error())
