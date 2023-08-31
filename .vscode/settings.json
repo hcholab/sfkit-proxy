@@ -1,4 +1,18 @@
 {
+    "go.diagnostic.vulncheck": "Imports",
+    "go.formatTool": "gofumpt",
     "go.lintTool": "golangci-lint",
-    "go.lintFlags": ["--fast"]
+    "go.lintFlags": ["--fast"],
+    "go.toolsManagement.autoUpdate": true,
+    "gopls": {
+        "ui.diagnostic.analyses": {
+            "fieldalignment": true,
+            "nilness": true,
+            "shadow": true,
+            "unusedparams": true,
+            "unusedvariable": true,
+            "unusedwrite": true,
+            "useany": true,
+        },
+    },
 }
