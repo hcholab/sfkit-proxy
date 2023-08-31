@@ -2,46 +2,28 @@ import asyncio
 import os
 from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Dict, Set
+from typing import Awaitable, Callable, Dict, List
 
 import httpx
-from quart import Quart, Websocket, copy_current_websocket_context, websocket
+from quart import Quart, abort, copy_current_websocket_context, websocket
 
-app = Quart(__name__)
 
-# using in-memory store for the demo
-# TODO replace with database lookup in real implementation
-studies: Dict[str, Set[str]] = {}
-
-# may want to keep in-memory
-study_barriers: Dict[str, asyncio.Barrier] = {}
-study_clients: Dict[str, Dict[str, Websocket]] = {}
-
-PORT = os.getenv("PORT", "8000")
-ORIGIN = os.getenv("ORIGIN", f"ws://host.docker.internal:{PORT}")
-
-DEMO_CLIENT_IDS = os.getenv("DEMO_CLIENT_IDS", "").split(",")
-DEMO = len(DEMO_CLIENT_IDS) > 0
-if DEMO:
-    studies = {
-        "1": set(DEMO_CLIENT_IDS[:2]),
-        "2": set(DEMO_CLIENT_IDS[1:]),
-    }
+PID = int
 
 
 class MessageType(Enum):
-    STUDY = "study"
-    CONNECTED = "connected"
     CANDIDATE = "candidate"
     CREDENTIAL = "credential"
     ERROR = "error"
+
 
 @dataclass
 class Message:
     type: MessageType
     data: str = ""
-    studyId: str = ""
-    clientId: str = ""
+    studyID: str = ""
+    sourcePID: PID = -1
+    targetPID: PID = -1
 
     async def send(self, ws=websocket):
         msg = asdict(self)
@@ -54,98 +36,142 @@ class Message:
     async def receive():
         msg = await websocket.receive_json()
         print("Received", msg)
-        msg['type'] = MessageType(msg['type'])
+        msg["type"] = MessageType(msg["type"])
         return Message(**msg)
+
+
+# using in-memory store for the demo
+# TODO replace with database lookup in real implementation
+studies: Dict[str, List[str]] = {}
+
+# in-memory stores for Websockets
+study_barriers: Dict[str, asyncio.Barrier] = {}
+study_parties: Dict[str, Dict[PID, Callable[[Message], Awaitable[None]]]] = {}
+
+PORT = os.getenv("PORT", "8000")
+ORIGIN = os.getenv("ORIGIN", f"ws://host.docker.internal:{PORT}")
+TERRA = os.getenv("TERRA", "y")
+
+DEMO_USER_IDS = [s for s in os.getenv("DEMO_USER_IDS", "").split(",") if s]
+DEMO = len(DEMO_USER_IDS) >= 2
+if DEMO:
+    studies = {
+        "1": list(DEMO_USER_IDS),
+        "2": list(DEMO_USER_IDS[1:]),
+    }
+
+AUTH_HEADER = "Authorization"
+USER_ID_HEADER = "OIDC_CLAIM_USER_ID"
+STUDY_ID_HEADER = "X-MPC-Study-ID"
+
+app = Quart(__name__)
 
 
 @app.websocket("/api/ice")
 async def handler():
     # check origin
-    if websocket.headers.get("Origin") != ORIGIN:
-        return "Unauthorized", 401
+    origin = websocket.headers.get("Origin")
+    if origin != ORIGIN:
+        await Message(MessageType.ERROR, f"Unexpected Origin header").send()
+        abort(401)
 
-    if DEMO:
-        # when testing, get token subject from Google
-        client_id = await get_subject_id()
-    else:
-        # when running as a Terra service behind Apache proxy,
-        # the proxy will take care of extracting the claim automatically
-        client_id = websocket.headers.get("oidc_claim_user_id")
-    if not client_id:
-        return "Unauthorized", 401
+    # retrieve user ID
+    user_id = await _get_user_id()
+    if not user_id:
+        await Message(MessageType.ERROR, f"Missing authentication").send()
+        abort(401)
 
-    # receive the first message containing the study ID
-    msg = await Message.receive()
-    if msg.type != MessageType.STUDY:
-        await Message(MessageType.ERROR, "Wrong message type; expected 'study'").send()
-        return "Bad Request", 400
-    study_id = msg.studyId
+    # read study ID from the custom header
+    study_id = websocket.headers.get(STUDY_ID_HEADER)
     if not study_id:
-        await Message(MessageType.ERROR, "Missing study ID").send()
-        return "Bad Request", 400
-    print(f"Received study ID {study_id} from client {client_id}")
+        await Message(MessageType.ERROR, f"Missing {STUDY_ID_HEADER} header").send()
+        abort(400)
 
-    # get current study and its existing clients, if any
-    # (TODO replace with a real database lookup)
-    study = studies.setdefault(study_id, set())
-    clients = study_clients.setdefault(study_id, {})
+    # retrieve the study
+    study = _get_study(study_id)
 
-    # check study access
-    if client_id not in study:
+    # get PID for the user ID in this study
+    # and  make sure they have access to the study
+    pid = _get_pid(study, user_id)
+    if pid < 0:
         await Message(
-            MessageType.ERROR, f"Client {client_id} is not part of study {study_id}"
+            MessageType.ERROR, f"User {user_id} is not in study {study_id}"
         ).send()
-        return "Forbidden", 403
+        abort(403)
 
-    # check for duplicate connection
-    if client_id in clients:
+    # get existing parties, if any, and check for a duplicate connection
+    parties = study_parties.setdefault(study_id, {})
+    if pid in parties:
         await Message(
             MessageType.ERROR,
-            f"Client {client_id} is already connected to study {study_id}",
+            f"Party {pid} is already connected to study {study_id}",
         ).send()
-        return "Conflict", 409
+        abort(409)
 
     try:
-        # store the current websocket send method for the client
+        # store the current websocket send method for the party
         @copy_current_websocket_context
         async def ws_send(msg: Message):
             await msg.send()
 
-        clients[client_id] = ws_send
-        print(f"Registered websocket for client {client_id}")
+        parties[pid] = ws_send
+        print(f"Registered websocket for party {pid}")
 
         # using a study-specific barrier,
         # wait until all participants in a study are connected,
         # and then initiate the ICE protocol for it
         barrier = study_barriers.setdefault(study_id, asyncio.Barrier(len(study)))
-        async with barrier as party:
-            await Message(MessageType.CONNECTED, clientId=client_id).send()
-            if party == 0:
-                print("All clients have connected:", ", ".join(clients.keys()))
+        async with barrier:
+            if pid == 0:
+                print("All parties have connected:", ", ".join(str(k) for k in parties))
 
             while True:
-                # read the next message and override its client ID
-                # (could be of type 'candidate' or 'credential')
+                # read the next message and override its PID
+                # (this prevents PID spoofing)
                 msg = await Message.receive()
-                msg.clientId = client_id
+                msg.sourcePID = pid
+                msg.studyID = study_id
 
-                # and broadcast it to all of the other participants
-                await asyncio.gather(
-                    *(send(msg) for cid, send in clients.items() if cid != client_id)
-                )
+                # and send it to the other party
+                if msg.targetPID < 0:
+                    await Message(MessageType.ERROR, f"Missing target PID: {msg}").send()
+                    continue
+                elif msg.targetPID not in parties or msg.targetPID == pid:
+                    await Message(
+                        MessageType.ERROR,
+                        f"Unexpected target id {msg.targetPID}",
+                    ).send()
+                    continue
+                else:
+                    target_send = parties[msg.targetPID]
+                    await target_send(msg)
     except Exception as e:
-        print(f"Terminal error in client {client_id} connection: {e}")
+        print(f"Terminal connection error for party {pid} in study {study_id}: {e}")
     finally:
-        del clients[client_id]
-        print(f"Client {client_id} disconnected from study {study_id}")
+        del parties[pid]
+        print(f"Party {pid} disconnected from study {study_id}")
 
 
-async def get_subject_id():
+async def _get_user_id():
+    if DEMO:
+        # when testing, get token subject from Google
+        return await _get_subject_id()
+    elif TERRA:
+        # when running as a Terra service behind Apache proxy,
+        # the proxy will take care of extracting JWT "sub" claim
+        # into this header automatically
+        return websocket.headers.get(USER_ID_HEADER)
+    else:
+        # TODO if not on Terra, use existing auth
+        return ""
+
+
+async def _get_subject_id():
     async with httpx.AsyncClient() as client:
         res = await client.get(
             "https://www.googleapis.com/oauth2/v3/tokeninfo",
             headers={
-                "Authorization": websocket.headers.get("authorization"),
+                "Authorization": websocket.headers.get(AUTH_HEADER) or "",
             },
         )
         if res.is_error:
@@ -155,6 +181,24 @@ async def get_subject_id():
             ).send()
         else:
             return res.json()["sub"]
+
+
+def _get_study(study_id: str):
+    # retrieve the study
+    if DEMO:
+        return studies.setdefault(study_id, [])
+    else:
+        # TODO lookup study from the database
+        return []
+
+
+def _get_pid(study: List[str], user_id: str) -> PID:
+    if DEMO:
+        # when testing, infer PID from a demo study, if present
+        return study.index(user_id) if user_id in study else -1
+    else:
+        # TODO lookup user ID -> PID in the real database object, if present
+        return -1
 
 
 if __name__ == "__main__":
