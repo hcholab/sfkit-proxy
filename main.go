@@ -17,6 +17,7 @@ import (
 	"github.com/hcholab/sfkit-proxy/ice"
 	"github.com/hcholab/sfkit-proxy/logging"
 	"github.com/hcholab/sfkit-proxy/mpc"
+	"github.com/hcholab/sfkit-proxy/proxy"
 	"github.com/hcholab/sfkit-proxy/quic"
 	"github.com/hcholab/sfkit-proxy/util"
 )
@@ -24,14 +25,16 @@ import (
 type Args struct {
 	ListenURI       *url.URL
 	SignalServerURI *url.URL
-	StunServerURIs  []string
+	SocksListenURI  *url.URL
 	MPCConfig       *mpc.Config
 	StudyID         string
+	StunServerURIs  []string
 	Verbose         bool
 }
 
 func parseArgs() (args Args, err error) {
 	listenURI := "udp://:0"
+	socksListenURI := "tcp://:8000"
 	signalServerURI := "ws://host.docker.internal:8000/api/ice" // TODO change default for Terra
 	stunServers := strings.Join(ice.DefaultSTUNServers(), ",")
 	mpcConfigPath := "configGlobal.toml"
@@ -39,6 +42,7 @@ func parseArgs() (args Args, err error) {
 
 	flag.StringVar(&signalServerURI, "api", signalServerURI, "ICE signaling server API")
 	flag.StringVar(&listenURI, "listen", listenURI, "Local listener URI")
+	flag.StringVar(&socksListenURI, "socks", socksListenURI, "Local SOCKS listener URI")
 	flag.StringVar(
 		&stunServers,
 		"stun",
@@ -54,6 +58,12 @@ func parseArgs() (args Args, err error) {
 	flag.Parse()
 
 	if args.ListenURI, err = url.Parse(listenURI); err != nil {
+		return
+	}
+	if args.SocksListenURI, err = url.Parse(socksListenURI); err != nil {
+		return
+	} else if args.SocksListenURI.Scheme != "tcp" {
+		err = fmt.Errorf("invalid SOCKS URI scheme: %s, expected: tcp", args.SocksListenURI.Scheme)
 		return
 	}
 	if args.SignalServerURI, err = url.Parse(signalServerURI); err != nil {
@@ -118,6 +128,19 @@ func run() (exitCode int, err error) {
 	}
 	defer util.Cleanup(&err, quicSvc.Stop)
 
+	proxySvc, err := proxy.NewService(
+		ctx,
+		args.SocksListenURI,
+		args.MPCConfig,
+		quicSvc.GetConn,
+		errs,
+	)
+	if err != nil {
+		return
+	}
+	defer util.Cleanup(&err, proxySvc.Stop)
+
+	// Wait for exit
 	exitCh := handleSignals(ctx)
 	doneCh := make(chan error)
 	go func() {
