@@ -3,10 +3,10 @@ package quic
 import (
 	"context"
 	"crypto/tls"
+	"io"
+	"log/slog"
 	"net"
 	"time"
-
-	"log/slog"
 
 	"github.com/quic-go/quic-go"
 
@@ -15,23 +15,23 @@ import (
 	"github.com/hcholab/sfkit-proxy/util"
 )
 
-type packetConnGetter func(context.Context, mpc.PID) (<-chan *conn.PacketConn, error)
+type packetConnsGetter func(context.Context, mpc.PID) (<-chan *conn.PacketConn, io.Closer, error)
 
 type Service struct {
 	mpc     *mpc.Config
 	tlsConf *tls.Config
 	qConf   *quic.Config
 
-	getPacketConns packetConnGetter
+	getPacketConns packetConnsGetter
 }
 
 const retryMs = 1000
 
-func NewService(mpcConf *mpc.Config, pc packetConnGetter) (s *Service, err error) {
 	s = &Service{mpcConf, nil, &quic.Config{}, pc}
 	if s.tlsConf, err = generateTLSConfig(); err != nil {
 		return
 	}
+func NewService(mpcConf *mpc.Config, pc packetConnsGetter) (s *Service, err error) {
 	slog.Debug("Started QUIC service")
 	return
 }
@@ -40,19 +40,19 @@ func NewService(mpcConf *mpc.Config, pc packetConnGetter) (s *Service, err error
 // and returns a *conn.Conn channel, which allows the client
 // to subscribe to changes in the connection.
 func (s *Service) GetConn(ctx context.Context, peerPID mpc.PID) (_ <-chan *conn.Conn, err error) {
-	slog.Debug(">>>>> quic.GetConn:", "peerPID", peerPID)
-	pcs, err := s.getPacketConns(ctx, peerPID)
+	slog.Debug("Getting connection for", "peerPID", peerPID)
+	pcs, c, err := s.getPacketConns(ctx, peerPID)
 	if err != nil {
 		return
 	}
-	slog.Debug(">>>> quick.GetConn:", "pcs", pcs)
 
 	conns := make(chan *conn.Conn, s.mpc.Threads)
 	go func() {
+		defer c.Close()
 		for {
 			select {
 			case pc := <-pcs:
-				slog.Debug(">>>>> quic.GetConn:", "pc", pc)
+				slog.Debug("Obtained connection for", "peerPID", peerPID)
 				var err error
 				tr := &quic.Transport{Conn: pc}
 				defer util.Cleanup(&err, tr.Close)

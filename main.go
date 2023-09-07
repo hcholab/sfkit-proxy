@@ -4,13 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
-
-	"log/slog"
 
 	"golang.org/x/sync/errgroup"
 
@@ -110,31 +109,19 @@ func run() (exitCode int, err error) {
 	errs, ctx := errgroup.WithContext(ctx)
 	defer cancel()
 
-	iceSvc, err := ice.NewService(
-		ctx,
-		args.SignalServerURI,
-		args.StunServerURIs,
-		args.StudyID,
-		args.MPCConfig,
-	)
+	iceSvc, err := ice.NewService(ctx, args.SignalServerURI, args.StunServerURIs, args.StudyID, args.MPCConfig)
 	if err != nil {
 		return
 	}
 	defer util.Cleanup(&err, iceSvc.Stop)
 
-	quicSvc, err := quic.NewService(args.MPCConfig, iceSvc.GetConn)
+	quicSvc, err := quic.NewService(args.MPCConfig, iceSvc.GetPacketConns)
 	if err != nil {
 		return
 	}
 	defer util.Cleanup(&err, quicSvc.Stop)
 
-	proxySvc, err := proxy.NewService(
-		ctx,
-		args.SocksListenURI,
-		args.MPCConfig,
-		quicSvc.GetConn,
-		errs,
-	)
+	proxySvc, err := proxy.NewService(ctx, args.SocksListenURI, args.MPCConfig, quicSvc.GetConn, errs)
 	if err != nil {
 		return
 	}

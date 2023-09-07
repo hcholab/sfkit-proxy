@@ -5,10 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"strings"
-
-	"log/slog"
 
 	"github.com/pion/ice/v2"
 	"github.com/pion/stun"
@@ -122,15 +121,15 @@ func NewService(
 	return
 }
 
-// GetPacketConn establishes an ICE-managed connection with a peer,
+// GetPacketConns initiates the ICE protocol with a peer,
 // and returns a *conn.PacketConn channel, which allows the client
-// to subscribe to changes in the connection.
+// to subscribe to connections established by the protocol.
 //
 // Based on https://github.com/pion/ice/tree/master/examples/ping-pong
-func (s *Service) GetConn(
+func (s *Service) GetPacketConns(
 	ctx context.Context,
 	peerPID mpc.PID,
-) (_ <-chan *conn.PacketConn, err error) {
+) (_ <-chan *conn.PacketConn, _ io.Closer, err error) {
 	conns := make(chan *conn.PacketConn, 1)
 
 	if peerPID == s.mpc.LocalPID {
@@ -143,7 +142,6 @@ func (s *Service) GetConn(
 	if err != nil {
 		return
 	}
-	a.Close()
 
 	// start listening for ICE signaling messages
 	go s.listenForSignals(ctx, a, conns)
@@ -165,7 +163,7 @@ func (s *Service) GetConn(
 
 	// start trickle ICE candidate gathering process
 	slog.Debug("Gathering ICE candidates for", "peer", peerPID)
-	return conns, a.GatherCandidates()
+	return conns, a, a.GatherCandidates()
 }
 
 func (s *Service) connectWebSocket(ctx context.Context, api *url.URL, studyID string) (err error) {
@@ -252,7 +250,7 @@ func setupConnectionStateHandler(a *ice.Agent) (err error) {
 }
 
 func (s *Service) sendLocalCredentials(a *ice.Agent, targetPID mpc.PID) (err error) {
-	slog.Debug(">>>> Waiting for local ICE credentials", "targetPID", targetPID)
+	slog.Debug("Waiting for local ICE credentials", "targetPID", targetPID)
 	localUfrag, localPwd, err := a.GetLocalUserCredentials()
 	if err != nil {
 		err = fmt.Errorf("getting local ICE credentials: %s", err.Error())
@@ -327,7 +325,6 @@ func handleRemoteCandidate(a *ice.Agent, candidate string) {
 		return
 	}
 	slog.Debug("Added remote", "candidate", c)
-	return
 }
 
 func (s *Service) handleRemoteCredential(a *ice.Agent, msg Message, conns chan<- *conn.PacketConn) {
@@ -350,13 +347,7 @@ func (s *Service) handleRemoteCredential(a *ice.Agent, msg Message, conns chan<-
 		slog.Error("ICE operation:", "err", err)
 		return
 	}
-	slog.Info(
-		"Established ICE connection:",
-		"localAddr",
-		c.LocalAddr(),
-		"remoteAddr",
-		c.RemoteAddr(),
-	)
+	slog.Info("Established ICE connection:", "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr())
 	s.conns = append(s.conns, c)
 	conns <- &conn.PacketConn{Conn: c}
 }
