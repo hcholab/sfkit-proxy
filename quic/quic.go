@@ -18,20 +18,16 @@ import (
 type packetConnsGetter func(context.Context, mpc.PID) (<-chan *conn.PacketConn, io.Closer, error)
 
 type Service struct {
-	mpc     *mpc.Config
-	tlsConf *tls.Config
-	qConf   *quic.Config
+	mpc   *mpc.Config
+	qConf *quic.Config
 
 	getPacketConns packetConnsGetter
 }
 
 const retryMs = 1000
 
-	s = &Service{mpcConf, nil, &quic.Config{}, pc}
-	if s.tlsConf, err = generateTLSConfig(); err != nil {
-		return
-	}
 func NewService(mpcConf *mpc.Config, pc packetConnsGetter) (s *Service, err error) {
+	s = &Service{mpcConf, &quic.Config{}, pc}
 	slog.Debug("Started QUIC service")
 	return
 }
@@ -57,10 +53,15 @@ func (s *Service) GetConn(ctx context.Context, peerPID mpc.PID) (_ <-chan *conn.
 				tr := &quic.Transport{Conn: pc}
 				defer util.Cleanup(&err, tr.Close)
 
+				var tlsConf *tls.Config
+				if tlsConf, err = generateTLSConfig(pc.LocalAddr()); err != nil {
+					slog.Error(err.Error())
+					continue // TODO: retry?
+				}
 				if s.mpc.IsClient(peerPID) {
-					err = s.listenClient(ctx, tr, peerPID, pc.RemoteAddr(), conns)
+					err = s.listenClient(ctx, tr, tlsConf, peerPID, pc.RemoteAddr(), conns)
 				} else {
-					err = s.listenServer(ctx, tr, peerPID, conns)
+					err = s.listenServer(ctx, tr, tlsConf, peerPID, conns)
 				}
 				if err != nil {
 					slog.Error(err.Error())
@@ -82,23 +83,16 @@ func (s *Service) Stop() error {
 func (s *Service) listenClient(
 	ctx context.Context,
 	tr *quic.Transport,
+	tlsConf *tls.Config,
 	pid mpc.PID,
 	addr net.Addr,
 	conns chan<- *conn.Conn,
 ) (err error) {
-	c, err := tr.Dial(ctx, addr, s.tlsConf, s.qConf)
+	c, err := tr.Dial(ctx, addr, tlsConf, s.qConf)
 	if err != nil {
 		return
 	}
-	slog.Info(
-		"Started QUIC client:",
-		"peer",
-		pid,
-		"localAddr",
-		c.LocalAddr(),
-		"remoteAddr",
-		c.RemoteAddr(),
-	)
+	slog.Info("Started QUIC client:", "peer", pid, "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr())
 	for {
 		var st quic.Stream
 		if st, err = c.OpenStream(); err != nil {
@@ -123,10 +117,11 @@ func (s *Service) listenClient(
 func (s *Service) listenServer(
 	ctx context.Context,
 	tr *quic.Transport,
+	tlsConf *tls.Config,
 	pid mpc.PID,
 	conns chan<- *conn.Conn,
 ) (err error) {
-	l, err := tr.Listen(s.tlsConf, s.qConf)
+	l, err := tr.Listen(tlsConf, s.qConf)
 	defer util.Cleanup(&err, l.Close)
 	slog.Info("Started QUIC listener:", "peer", pid, "localAddr", l.Addr())
 
