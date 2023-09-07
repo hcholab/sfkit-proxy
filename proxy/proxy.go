@@ -4,13 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand"
 	"net"
 	"net/netip"
 	"net/url"
 	"sync"
-
-	"log/slog"
 
 	"github.com/armon/go-socks5"
 	"golang.org/x/sync/errgroup"
@@ -209,7 +208,6 @@ func initLocalConn(
 	}
 
 	go handleClientConns(ctx, localConns, remoteConns)
-	return
 }
 
 const tcpBufSize = 4096 // TODO measure performance and adjust as needed
