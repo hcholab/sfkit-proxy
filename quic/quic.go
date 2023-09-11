@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/hcholab/sfkit-proxy/conn"
 	"github.com/hcholab/sfkit-proxy/mpc"
@@ -35,7 +36,7 @@ func NewService(mpcConf *mpc.Config, pc packetConnsGetter) (s *Service, err erro
 // GetConn establishes a QUIC connection stream with a peer,
 // and returns a *conn.Conn channel, which allows the client
 // to subscribe to changes in the connection.
-func (s *Service) GetConn(ctx context.Context, peerPID mpc.PID) (_ <-chan *conn.Conn, err error) {
+func (s *Service) GetConn(ctx context.Context, peerPID mpc.PID, errs *errgroup.Group) (_ <-chan *conn.Conn, err error) {
 	slog.Debug("Getting connection for", "peerPID", peerPID)
 	pcs, c, err := s.getPacketConns(ctx, peerPID)
 	if err != nil {
@@ -43,13 +44,13 @@ func (s *Service) GetConn(ctx context.Context, peerPID mpc.PID) (_ <-chan *conn.
 	}
 
 	conns := make(chan *conn.Conn, s.mpc.Threads)
-	go func() {
-		defer c.Close()
+	errs.Go(func() (err error) {
+		defer util.Cleanup(&err, c.Close)
 		for {
 			select {
 			case pc := <-pcs:
 				slog.Debug("Obtained connection for", "peerPID", peerPID)
-				var err error
+
 				tr := &quic.Transport{Conn: pc}
 				defer util.Cleanup(&err, tr.Close)
 
@@ -58,6 +59,7 @@ func (s *Service) GetConn(ctx context.Context, peerPID mpc.PID) (_ <-chan *conn.
 					slog.Error(err.Error())
 					continue // TODO: retry?
 				}
+
 				if s.mpc.IsClient(peerPID) {
 					err = s.listenClient(ctx, tr, tlsConf, peerPID, pc.RemoteAddr(), conns)
 				} else {
@@ -71,7 +73,7 @@ func (s *Service) GetConn(ctx context.Context, peerPID mpc.PID) (_ <-chan *conn.
 				return
 			}
 		}
-	}()
+	})
 	return conns, nil
 }
 
@@ -80,14 +82,7 @@ func (s *Service) Stop() error {
 	return nil
 }
 
-func (s *Service) listenClient(
-	ctx context.Context,
-	tr *quic.Transport,
-	tlsConf *tls.Config,
-	pid mpc.PID,
-	addr net.Addr,
-	conns chan<- *conn.Conn,
-) (err error) {
+func (s *Service) listenClient(ctx context.Context, tr *quic.Transport, tlsConf *tls.Config, pid mpc.PID, addr net.Addr, conns chan<- *conn.Conn) (err error) {
 	c, err := tr.Dial(ctx, addr, tlsConf, s.qConf)
 	if err != nil {
 		return
@@ -113,17 +108,10 @@ func (s *Service) listenClient(
 	}
 }
 
-// RunServer listens on *quic.Transport and handles incoming connections and their streams
-func (s *Service) listenServer(
-	ctx context.Context,
-	tr *quic.Transport,
-	tlsConf *tls.Config,
-	pid mpc.PID,
-	conns chan<- *conn.Conn,
-) (err error) {
+func (s *Service) listenServer(ctx context.Context, tr *quic.Transport, tlsConf *tls.Config, pid mpc.PID, conns chan<- *conn.Conn) (err error) {
 	l, err := tr.Listen(tlsConf, s.qConf)
 	defer util.Cleanup(&err, l.Close)
-	slog.Info("Started QUIC listener:", "peer", pid, "localAddr", l.Addr())
+	slog.Info("Started QUIC server:", "peer", pid, "localAddr", l.Addr())
 
 	for {
 		var c quic.Connection
@@ -145,12 +133,7 @@ func (s *Service) listenServer(
 	}
 }
 
-func (s *Service) handleServerConn(
-	ctx context.Context,
-	pid mpc.PID,
-	conns chan<- *conn.Conn,
-	c quic.Connection,
-) {
+func (s *Service) handleServerConn(ctx context.Context, pid mpc.PID, conns chan<- *conn.Conn, c quic.Connection) {
 	for {
 		var st quic.Stream
 		var err error

@@ -18,7 +18,7 @@ import (
 	"github.com/hcholab/sfkit-proxy/mpc"
 )
 
-type remoteConnGetter func(context.Context, mpc.PID) (<-chan *conn.Conn, error)
+type remoteConnGetter func(context.Context, mpc.PID, *errgroup.Group) (<-chan *conn.Conn, error)
 
 type Service struct {
 	mpc *mpc.Config
@@ -26,28 +26,25 @@ type Service struct {
 
 	remoteConns    map[mpc.PID]<-chan *conn.Conn
 	getRemoteConns remoteConnGetter
+
+	errs *errgroup.Group
 }
 
-func NewService(
-	ctx context.Context,
-	listenURI *url.URL,
-	mpcConf *mpc.Config,
-	rcg remoteConnGetter,
-	errs *errgroup.Group,
-) (s *Service, err error) {
+func NewService(ctx context.Context, listenURI *url.URL, mpcConf *mpc.Config, rcg remoteConnGetter, errs *errgroup.Group) (s *Service, err error) {
 	slog.Debug("Starting SOCKS service")
 
 	s = &Service{
 		mpc:            mpcConf,
 		remoteConns:    make(map[mpc.PID]<-chan *conn.Conn),
 		getRemoteConns: rcg,
+		errs:           errs,
 	}
 	slog.Debug("MPC:", "config", mpcConf)
 
 	if len(mpcConf.ServerPIDs) > 0 {
 		// set up SOCKS5 listener that accepts
 		// connections from local proxy clients
-		if err = s.createSocksListener(listenURI, errs); err != nil {
+		if err = s.createSocksListener(listenURI); err != nil {
 			return
 		}
 	}
@@ -72,7 +69,7 @@ func (s *Service) Stop() (err error) {
 	return s.l.Close()
 }
 
-func (s *Service) createSocksListener(listenURI *url.URL, errs *errgroup.Group) (err error) {
+func (s *Service) createSocksListener(listenURI *url.URL) (err error) {
 	server, err := socks5.New(&socks5.Config{
 		Dial: s.dialRemote,
 	})
@@ -82,7 +79,7 @@ func (s *Service) createSocksListener(listenURI *url.URL, errs *errgroup.Group) 
 	if s.l, err = net.Listen(listenURI.Scheme, listenURI.Host); err != nil {
 		return
 	}
-	errs.Go(func() (err error) {
+	s.errs.Go(func() (err error) {
 		if err = server.Serve(s.l); err == nil {
 			// TODO implement reconnect ?
 			return
@@ -139,8 +136,8 @@ func (s *Service) initRemoteConns(ctx context.Context, errs *errgroup.Group) (er
 	for _, pid := range s.mpc.PeerPIDs {
 		remotePID := pid
 
-		errs.Go(func() (err error) {
-			c, err := s.getRemoteConns(ctx, remotePID)
+		s.errs.Go(func() (err error) {
+			c, err := s.getRemoteConns(ctx, remotePID, s.errs)
 			if err == nil {
 				pidConns <- &pidConn{c, remotePID}
 			}
@@ -165,7 +162,7 @@ func (s *Service) initLocalConns(ctx context.Context, errs *errgroup.Group) (err
 	wg := &sync.WaitGroup{}
 
 	for clientPID, localAddrs := range s.mpc.PIDClients {
-		go initLocalConn(ctx, localAddrs, s.remoteConns[clientPID], errs)
+		go s.initLocalConn(ctx, localAddrs, s.remoteConns[clientPID])
 
 		clientPIDs = append(clientPIDs, clientPID)
 		wg.Add(1)
@@ -176,18 +173,13 @@ func (s *Service) initLocalConns(ctx context.Context, errs *errgroup.Group) (err
 	return
 }
 
-func initLocalConn(
-	ctx context.Context,
-	localAddrs []netip.AddrPort,
-	remoteConns <-chan *conn.Conn,
-	errs *errgroup.Group,
-) {
+func (s *Service) initLocalConn(ctx context.Context, localAddrs []netip.AddrPort, remoteConns <-chan *conn.Conn) {
 	tcpConns := make(chan *net.TCPConn, len(localAddrs))
 
 	for _, addr := range localAddrs {
 		localAddr := addr
 
-		errs.Go(func() (err error) {
+		s.errs.Go(func() (err error) {
 			// TODO implement re-connect ?
 			c, err := net.Dial("tcp", localAddr.String())
 			if err != nil {
@@ -207,16 +199,14 @@ func initLocalConn(
 		localConns = append(localConns, <-tcpConns)
 	}
 
-	go handleClientConns(ctx, localConns, remoteConns)
+	s.errs.Go(func() (err error) {
+		return s.handleClientConns(ctx, localConns, remoteConns)
+	})
 }
 
 const tcpBufSize = 4096 // TODO measure performance and adjust as needed
 
-func handleClientConns(
-	ctx context.Context,
-	localConns []*net.TCPConn,
-	remoteConns <-chan *conn.Conn,
-) {
+func (s *Service) handleClientConns(ctx context.Context, localConns []*net.TCPConn, remoteConns <-chan *conn.Conn) (err error) {
 	buf := make([]byte, tcpBufSize)
 	for {
 		select {
@@ -225,13 +215,16 @@ func handleClientConns(
 			lc := localConns[rand.Intn(len(localConns))]
 
 			// proxy remote request-response through the connection
-			if _, err := readWriteStream(buf, rc, lc); err != nil {
+			if _, err = readWriteStream(buf, rc, lc); err != nil {
 				if err == io.EOF {
-					return // TODO implement reconnect
+					err = nil
+					return // TODO: implement reconnect
 				} else if ctx.Err() == context.Canceled {
+					err = nil
 					return
 				}
 				slog.Error(err.Error())
+				// retry
 			}
 		case <-ctx.Done():
 			return
