@@ -63,10 +63,11 @@ func ParseConfig(configPath string, localPID PID) (c *Config, err error) {
 				return
 			}
 			for t := 0; t < tc.MpcNumThreads; t++ {
-				if serverPID == localPID {
+				switch localPID {
+				case serverPID:
 					c.PIDClients[clientPID] = append(c.PIDClients[clientPID], ap)
 					peerPIDs[clientPID] = true
-				} else if clientPID == localPID {
+				case clientPID:
 					c.ServerPIDs[ap] = serverPID
 					peerPIDs[serverPID] = true
 				}
