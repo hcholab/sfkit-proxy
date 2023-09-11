@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math/rand"
 	"net"
 	"net/netip"
 	"net/url"
@@ -115,6 +114,10 @@ func (s *Service) dialRemote(ctx context.Context, network, addr string) (conn ne
 	}
 	conn = <-s.remoteConns[serverPID]
 	slog.Debug("SOCKS dial:", "PID", serverPID)
+
+	// Send remote port in big-endian format to the remote peer
+	bPort := []byte{byte(addrPort.Port() >> 8), byte(addrPort.Port())}
+	_, err = conn.Write(bPort)
 	return
 }
 
@@ -211,8 +214,11 @@ func (s *Service) handleClientConns(ctx context.Context, localConns []*net.TCPCo
 	for {
 		select {
 		case rc := <-remoteConns:
-			// pick a local TCP server connection at random
-			lc := localConns[rand.Intn(len(localConns))]
+			// retrieve local connection based on destination port sent by the client
+			var lc *net.TCPConn
+			if lc, err = getLocalConn(localConns, rc); err != nil {
+				return
+			}
 
 			// proxy remote request-response through the connection
 			if _, err = readWriteStream(buf, rc, lc); err != nil {
@@ -230,6 +236,24 @@ func (s *Service) handleClientConns(ctx context.Context, localConns []*net.TCPCo
 			return
 		}
 	}
+}
+
+func getLocalConn(localConns []*net.TCPConn, rc *conn.Conn) (lc *net.TCPConn, err error) {
+	// read destination port in big-endian format from the remote peer
+	bPort := make([]byte, 2)
+	if _, err = io.ReadFull(rc, bPort); err != nil {
+		return
+	}
+	port := int(bPort[0])<<8 | int(bPort[1])
+
+	for _, c := range localConns {
+		if c.RemoteAddr().(*net.TCPAddr).Port == int(port) {
+			lc = c
+			return
+		}
+	}
+	err = fmt.Errorf("no local connection found for port %d", port)
+	return
 }
 
 func readWriteStream(buf []byte, remoteConn *conn.Conn, localConn *net.TCPConn) (n int, err error) {
