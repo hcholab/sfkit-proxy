@@ -38,7 +38,7 @@ func main() {
 	errs := errgroup.Group{}
 	p := 0
 
-	// iterate over self ports and listen on each port..port+mpc.MpcNumThreads
+	// iterate over local server ports and listen on each port..port+mpc.MpcNumThreads
 	for id, port := range self.Ports {
 		peerID := id
 		p, err = strconv.Atoi(port)
@@ -53,6 +53,7 @@ func main() {
 		}
 	}
 
+	// send selfID to each peer according to mpc.Servers and mpc.MpcNumThreads
 	for id, peer := range mpc.Servers {
 		peerID := id
 		peerIP := net.ParseIP(peer.IpAddr)
