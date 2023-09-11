@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"net/url"
-	"strings"
 
 	"github.com/pion/ice/v2"
 	"github.com/pion/stun"
@@ -21,13 +20,9 @@ import (
 
 type Service struct {
 	mpc      *mpc.Config
+	ws       *websocket.Conn
 	studyID  string
 	stunURIs []*stun.URI
-	ws       *websocket.Conn
-
-	// keeps track of all connections to be closed
-	conns []*ice.Conn
-	a     int // test remove
 }
 
 type MessageType string
@@ -97,7 +92,6 @@ func NewService(
 	mpcConf *mpc.Config,
 ) (s *Service, err error) {
 	s = &Service{
-		conns:   make([]*ice.Conn, 0, len(mpcConf.PeerPIDs)),
 		mpc:     mpcConf,
 		studyID: studyID,
 	}
@@ -348,7 +342,6 @@ func (s *Service) handleRemoteCredential(a *ice.Agent, msg Message, conns chan<-
 		return
 	}
 	slog.Info("Established ICE connection:", "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr())
-	s.conns = append(s.conns, c)
 	conns <- &conn.PacketConn{Conn: c}
 }
 
@@ -363,18 +356,5 @@ func getAuthHeader(ctx context.Context) (header string, err error) {
 
 func (s *Service) Stop() (err error) {
 	slog.Warn("Stopping ICE service")
-	var errs []string
-	for _, c := range s.conns {
-		if err = c.Close(); err != nil && err != ice.ErrClosed {
-			errs = append(errs, err.Error())
-		}
-	}
-	if err = s.ws.Close(); err != nil {
-		errs = append(errs, err.Error())
-	}
-	if len(errs) > 0 {
-		err = fmt.Errorf("stopping ICE service: %s", strings.Join(errs, "; "))
-		slog.Error(err.Error())
-	}
-	return
+	return s.ws.Close()
 }

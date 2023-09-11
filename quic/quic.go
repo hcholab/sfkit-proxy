@@ -50,6 +50,7 @@ func (s *Service) GetConn(ctx context.Context, peerPID mpc.PID, errs *errgroup.G
 			select {
 			case pc := <-pcs:
 				slog.Debug("Obtained connection for", "peerPID", peerPID)
+				defer util.Cleanup(&err, pc.Close)
 
 				tr := &quic.Transport{Conn: pc}
 				defer util.Cleanup(&err, tr.Close)
