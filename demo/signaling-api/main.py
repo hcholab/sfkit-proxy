@@ -41,7 +41,7 @@ class Message:
 
 
 # using in-memory store for the demo
-# TODO replace with database lookup in real implementation
+# TODO: replace with database lookup in real implementation
 studies: Dict[str, List[str]] = {}
 
 # in-memory stores for Websockets
@@ -162,7 +162,7 @@ async def _get_user_id():
         # into this header automatically
         return websocket.headers.get(USER_ID_HEADER)
     else:
-        # TODO if not on Terra, use existing auth
+        # TODO: if not on Terra, use existing auth
         return ""
 
 
@@ -188,7 +188,7 @@ def _get_study(study_id: str):
     if DEMO:
         return studies.setdefault(study_id, [])
     else:
-        # TODO lookup study from the database
+        # TODO: lookup study from the database
         return []
 
 
@@ -197,7 +197,7 @@ def _get_pid(study: List[str], user_id: str) -> PID:
         # when testing, infer PID from a demo study, if present
         return study.index(user_id) if user_id in study else -1
     else:
-        # TODO lookup user ID -> PID in the real database object, if present
+        # TODO: lookup user ID -> PID in the real database object, if present
         return -1
 
 

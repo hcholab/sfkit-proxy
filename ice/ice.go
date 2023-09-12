@@ -55,7 +55,7 @@ const (
 )
 
 var defaultSTUNServers = []string{
-	// TODO can we rely on Google?
+	// TODO: can we rely on Google?
 	"stun:stun.l.google.com:19302",
 	// "stun:stun1.l.google.com:19302",
 	// "stun:stun2.l.google.com:19302",
@@ -106,7 +106,7 @@ func NewService(
 	// and return once all clients are connected
 	// and ready to initiate the ICE protocol
 	//
-	// TODO implement reconnect
+	// TODO: implement reconnect
 	if err = s.connectWebSocket(ctx, api, studyID); err != nil {
 		return
 	}
@@ -233,7 +233,7 @@ func (s *Service) setupNewCandidateHandler(a *ice.Agent, targetPID mpc.PID) (err
 }
 
 func setupConnectionStateHandler(a *ice.Agent) (err error) {
-	// TODO handle properly
+	// TODO: handle properly
 	if err = a.OnConnectionStateChange(func(c ice.ConnectionState) {
 		slog.Debug("ICE Connection State has changed", "state", c)
 	}); err != nil {
@@ -285,7 +285,7 @@ func (s *Service) listenForSignals(
 		var msg Message
 		if err := websocket.JSON.Receive(s.ws, &msg); err != nil {
 			if err == io.EOF {
-				// TODO implement reconnect
+				// TODO: implement reconnect
 				return
 			} else if ctx.Err() == context.Canceled {
 				return

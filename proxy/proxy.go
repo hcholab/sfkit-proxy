@@ -78,7 +78,7 @@ func (s *Service) createSocksListener(listenURI *url.URL) (err error) {
 	}
 	s.errs.Go(func() (err error) {
 		if err = server.Serve(s.l); err == nil {
-			// TODO implement reconnect ?
+			// TODO: implement reconnect ?
 			return
 		}
 		if opErr, ok := err.(*net.OpError); ok &&
@@ -184,7 +184,7 @@ func (s *Service) handleClientConns(ctx context.Context, localAddrs []netip.Addr
 	}
 }
 
-const tcpBufSize = 4096 // TODO measure performance and adjust as needed
+const tcpBufSize = 4096 // TODO: measure performance and adjust as needed
 
 func proxyRemoteClient(ctx context.Context, remoteConn *conn.Conn, localAddrs []netip.AddrPort) (err error) {
 	n := 0

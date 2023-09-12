@@ -71,7 +71,7 @@ func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID, errs *errgroup.
 				}
 				if err != nil {
 					slog.Error(err.Error())
-					continue // TODO should we retry ?
+					continue // TODO: should we retry ?
 				}
 			case <-ctx.Done():
 				return
@@ -99,7 +99,7 @@ func (s *Service) listenClient(ctx context.Context, tr *quic.Transport, tlsConf 
 				err = nil
 				return
 			}
-			// otherwise, retry after sleep; TODO exponential backoff ?
+			// otherwise, retry after sleep; TODO: exponential backoff ?
 			slog.Error("Opening QUIC stream:", "peer", pid, "err", err)
 			time.Sleep(retryMs * time.Millisecond)
 			continue
@@ -124,7 +124,7 @@ func (s *Service) listenServer(ctx context.Context, tr *quic.Transport, tlsConf 
 				err = nil
 				return
 			}
-			// retry after sleep; TODO exponential backoff ?
+			// retry after sleep; TODO: exponential backoff ?
 			time.Sleep(retryMs * time.Millisecond)
 			continue
 		}
@@ -142,7 +142,7 @@ func (s *Service) handleServerConn(ctx context.Context, pid mpc.PID, conns chan<
 		var st quic.Stream
 		var err error
 		if st, err = c.AcceptStream(ctx); err != nil {
-			// TODO handle more fully
+			// TODO: handle more fully
 			slog.Error("Accepting QUIC stream:", "err", err)
 			if e, ok := err.(net.Error); ok && e.Timeout() {
 				// connection is closed due to a timeout, simply exit
