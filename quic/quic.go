@@ -28,15 +28,18 @@ type Service struct {
 const retryMs = 1000
 
 func NewService(mpcConf *mpc.Config, pc packetConnsGetter) (s *Service, err error) {
-	s = &Service{mpcConf, &quic.Config{}, pc}
+	qc := &quic.Config{
+		KeepAlivePeriod: 15 * time.Second,
+	}
+	s = &Service{mpcConf, qc, pc}
 	slog.Debug("Started QUIC service")
 	return
 }
 
-// GetConn establishes a QUIC connection stream with a peer,
+// GetConns establishes a QUIC connection stream with a peer,
 // and returns a *conn.Conn channel, which allows the client
 // to subscribe to changes in the connection.
-func (s *Service) GetConn(ctx context.Context, peerPID mpc.PID, errs *errgroup.Group) (_ <-chan *conn.Conn, err error) {
+func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID, errs *errgroup.Group) (_ <-chan *conn.Conn, err error) {
 	slog.Debug("Getting connection for", "peerPID", peerPID)
 	pcs, c, err := s.getPacketConns(ctx, peerPID)
 	if err != nil {
@@ -91,7 +94,7 @@ func (s *Service) listenClient(ctx context.Context, tr *quic.Transport, tlsConf 
 	slog.Info("Started QUIC client:", "peer", pid, "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr())
 	for {
 		var st quic.Stream
-		if st, err = c.OpenStream(); err != nil {
+		if st, err = c.OpenStreamSync(ctx); err != nil {
 			if e, ok := err.(net.Error); ok && e.Timeout() {
 				err = nil
 				return
@@ -146,7 +149,7 @@ func (s *Service) handleServerConn(ctx context.Context, pid mpc.PID, conns chan<
 				return
 			}
 			// otherwise, retry after sleep
-			time.Sleep(retryMs * time.Millisecond)
+			time.Sleep(retryMs * time.Millisecond) // TODO: exponential backoff
 			continue
 		}
 		defer util.Cleanup(&err, st.Close)

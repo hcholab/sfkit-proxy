@@ -121,7 +121,7 @@ func run() (exitCode int, err error) {
 	}
 	defer util.Cleanup(&err, quicSvc.Stop)
 
-	proxySvc, err := proxy.NewService(ctx, args.SocksListenURI, args.MPCConfig, quicSvc.GetConn, errs)
+	proxySvc, err := proxy.NewService(ctx, args.SocksListenURI, args.MPCConfig, quicSvc.GetConns, errs)
 	if err != nil {
 		return
 	}

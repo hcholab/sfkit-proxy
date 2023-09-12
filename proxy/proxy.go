@@ -8,28 +8,28 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
-	"sync"
 
 	"github.com/armon/go-socks5"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/hcholab/sfkit-proxy/conn"
 	"github.com/hcholab/sfkit-proxy/mpc"
+	"github.com/hcholab/sfkit-proxy/util"
 )
 
-type remoteConnGetter func(context.Context, mpc.PID, *errgroup.Group) (<-chan *conn.Conn, error)
+type remoteConnsGetter func(context.Context, mpc.PID, *errgroup.Group) (<-chan *conn.Conn, error)
 
 type Service struct {
 	mpc *mpc.Config
 	l   net.Listener
 
 	remoteConns    map[mpc.PID]<-chan *conn.Conn
-	getRemoteConns remoteConnGetter
+	getRemoteConns remoteConnsGetter
 
 	errs *errgroup.Group
 }
 
-func NewService(ctx context.Context, listenURI *url.URL, mpcConf *mpc.Config, rcg remoteConnGetter, errs *errgroup.Group) (s *Service, err error) {
+func NewService(ctx context.Context, listenURI *url.URL, mpcConf *mpc.Config, rcg remoteConnsGetter, errs *errgroup.Group) (s *Service, err error) {
 	slog.Debug("Starting SOCKS service")
 
 	s = &Service{
@@ -55,9 +55,7 @@ func NewService(ctx context.Context, listenURI *url.URL, mpcConf *mpc.Config, rc
 
 	// set up local TCP server endpoints to forward
 	// connections from remote clients to
-	if err = s.initLocalConns(ctx, errs); err != nil {
-		return
-	}
+	s.initLocalConns(ctx, errs)
 
 	slog.Debug("Started proxy service")
 	return
@@ -122,7 +120,7 @@ func (s *Service) dialRemote(ctx context.Context, network, addr string) (conn ne
 }
 
 type pidConn struct {
-	Conn <-chan *conn.Conn
+	Conns <-chan *conn.Conn
 	mpc.PID
 }
 
@@ -140,9 +138,9 @@ func (s *Service) initRemoteConns(ctx context.Context, errs *errgroup.Group) (er
 		remotePID := pid
 
 		s.errs.Go(func() (err error) {
-			c, err := s.getRemoteConns(ctx, remotePID, s.errs)
+			conns, err := s.getRemoteConns(ctx, remotePID, s.errs)
 			if err == nil {
-				pidConns <- &pidConn{c, remotePID}
+				pidConns <- &pidConn{conns, remotePID}
 			}
 			return
 		})
@@ -151,125 +149,124 @@ func (s *Service) initRemoteConns(ctx context.Context, errs *errgroup.Group) (er
 
 	for i := 0; i < nConns; i++ {
 		pc := <-pidConns
-		s.remoteConns[pc.PID] = pc.Conn
+		s.remoteConns[pc.PID] = pc.Conns
 	}
 	slog.Debug("Initiated " + logName)
 	return
 }
 
-func (s *Service) initLocalConns(ctx context.Context, errs *errgroup.Group) (err error) {
+func (s *Service) initLocalConns(ctx context.Context, errs *errgroup.Group) {
 	const logSuffix = "local listeners for remote clients:"
 	slog.Debug("Initiating " + logSuffix)
 
 	clientPIDs := make([]mpc.PID, 0, len(s.mpc.PIDClients))
-	wg := &sync.WaitGroup{}
 
-	for clientPID, localAddrs := range s.mpc.PIDClients {
-		go s.initLocalConn(ctx, localAddrs, s.remoteConns[clientPID])
-
+	for clientPID, addrs := range s.mpc.PIDClients {
+		remoteConns := s.remoteConns[clientPID]
+		localAddrs := addrs
+		go s.handleClientConns(ctx, localAddrs, remoteConns)
 		clientPIDs = append(clientPIDs, clientPID)
-		wg.Add(1)
 	}
-	wg.Wait()
 
 	slog.Debug("Initiated "+logSuffix, "peers", clientPIDs)
-	return
 }
 
-func (s *Service) initLocalConn(ctx context.Context, localAddrs []netip.AddrPort, remoteConns <-chan *conn.Conn) {
-	tcpConns := make(chan *net.TCPConn, len(localAddrs))
-
-	for _, addr := range localAddrs {
-		localAddr := addr
-
-		s.errs.Go(func() (err error) {
-			// TODO implement re-connect ?
-			c, err := net.Dial("tcp", localAddr.String())
-			if err != nil {
-				return
-			}
-			if tcpConn, ok := c.(*net.TCPConn); ok {
-				tcpConns <- tcpConn
-			} else {
-				err = fmt.Errorf("not a TCP connection: %s", c)
-			}
-			return
-		})
-	}
-
-	localConns := make([]*net.TCPConn, 0, len(localAddrs))
-	for i := 0; i < len(localAddrs); i++ {
-		localConns = append(localConns, <-tcpConns)
-	}
-
-	s.errs.Go(func() (err error) {
-		return s.handleClientConns(ctx, localConns, remoteConns)
-	})
-}
-
-const tcpBufSize = 4096 // TODO measure performance and adjust as needed
-
-func (s *Service) handleClientConns(ctx context.Context, localConns []*net.TCPConn, remoteConns <-chan *conn.Conn) (err error) {
-	buf := make([]byte, tcpBufSize)
+func (s *Service) handleClientConns(ctx context.Context, localAddrs []netip.AddrPort, remoteConns <-chan *conn.Conn) (err error) {
 	for {
 		select {
-		case rc := <-remoteConns:
-			// retrieve local connection based on destination port sent by the client
-			var lc *net.TCPConn
-			if lc, err = getLocalConn(localConns, rc); err != nil {
-				return
-			}
-
-			// proxy remote request-response through the connection
-			if _, err = readWriteStream(buf, rc, lc); err != nil {
-				if err == io.EOF {
-					err = nil
-					return // TODO: implement reconnect
-				} else if ctx.Err() == context.Canceled {
-					err = nil
-					return
-				}
-				slog.Error(err.Error())
-				// retry
-			}
+		case remoteConn := <-remoteConns:
+			s.errs.Go(func() error {
+				return proxyRemoteClient(ctx, remoteConn, localAddrs)
+			})
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func getLocalConn(localConns []*net.TCPConn, rc *conn.Conn) (lc *net.TCPConn, err error) {
+const tcpBufSize = 4096 // TODO measure performance and adjust as needed
+
+func proxyRemoteClient(ctx context.Context, remoteConn *conn.Conn, localAddrs []netip.AddrPort) (err error) {
+	n := 0
+	buf := make([]byte, tcpBufSize)
+
+	for {
+		var localConn *net.TCPConn
+		if localConn, err = getLocalConn(localAddrs, remoteConn); err != nil {
+			return
+		}
+		defer util.Cleanup(&err, localConn.Close)
+
+		for {
+			// read a request from the remote client
+			if n, err = remoteConn.Read(buf); err != nil {
+				if err == io.EOF || ctx.Err() == context.Canceled {
+					err = nil
+				}
+				return
+			}
+
+			// forward it to the local server
+			if _, err = localConn.Write(buf[:n]); err != nil {
+				if err == io.EOF {
+					err = nil
+					// re-establish local TCP connection
+					break // TODO: exponential backoff
+				} else if ctx.Err() == context.Canceled {
+					err = nil
+				}
+				return
+			}
+
+			// read a response from the local server
+			if n, err = localConn.Read(buf); err != nil {
+				if err == io.EOF {
+					err = nil
+					// re-establish local TCP connection
+					break // TODO: exponential backoff
+				} else if ctx.Err() == context.Canceled {
+					err = nil
+				}
+				return
+			}
+
+			// forward the response back to the remote client
+			if _, err = remoteConn.Write(buf[:n]); err != nil {
+				if err == io.EOF || ctx.Err() == context.Canceled {
+					err = nil
+				}
+				return
+			}
+		}
+	}
+}
+
+func getLocalConn(localAddrs []netip.AddrPort, rc *conn.Conn) (lc *net.TCPConn, err error) {
 	// read destination port in big-endian format from the remote peer
 	bPort := make([]byte, 2)
 	if _, err = io.ReadFull(rc, bPort); err != nil {
 		return
 	}
-	port := int(bPort[0])<<8 | int(bPort[1])
+	port := uint16(bPort[0])<<8 | uint16(bPort[1])
 
-	for _, c := range localConns {
-		if c.RemoteAddr().(*net.TCPAddr).Port == int(port) {
-			lc = c
-			return
+	// look up local address:port based on the destination port
+	var localAddr *netip.AddrPort
+	for _, la := range localAddrs {
+		if la.Port() == port {
+			localAddr = &la
+			break
 		}
 	}
-	err = fmt.Errorf("no local connection found for port %d", port)
-	return
-}
+	if localAddr == nil {
+		err = fmt.Errorf("no local address corresponds to the port sent by the remote client: %d", port)
+		return
+	}
 
-func readWriteStream(buf []byte, remoteConn *conn.Conn, localConn *net.TCPConn) (n int, err error) {
-	// read a request from the remote client
-	if n, err = remoteConn.Read(buf); err != nil {
+	// establish a new TCP connection to the local address:port
+	var c net.Conn
+	if c, err = net.Dial("tcp", localAddr.String()); err != nil {
 		return
 	}
-	// forward it to the local server
-	if n, err = localConn.Write(buf[:n]); err != nil {
-		return
-	}
-	// read a response from the local server
-	if n, err = localConn.Read(buf); err != nil {
-		return
-	}
-	// forward the response back to the remote client
-	n, err = remoteConn.Write(buf[:n])
+	lc = c.(*net.TCPConn)
 	return
 }
