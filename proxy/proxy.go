@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,7 +18,7 @@ import (
 	"github.com/hcholab/sfkit-proxy/util"
 )
 
-type remoteConnsGetter func(context.Context, mpc.PID, *errgroup.Group) (<-chan *conn.Conn, error)
+type remoteConnsGetter func(context.Context, mpc.PID) (<-chan *conn.Conn, error)
 
 type Service struct {
 	mpc *mpc.Config
@@ -43,19 +44,19 @@ func NewService(ctx context.Context, listenURI *url.URL, mpcConf *mpc.Config, rc
 	if len(mpcConf.ServerPIDs) > 0 {
 		// set up SOCKS5 listener that accepts
 		// connections from local proxy clients
-		if err = s.createSocksListener(listenURI); err != nil {
+		if err = s.createSocksListener(ctx, listenURI); err != nil {
 			return
 		}
 	}
 
 	// create a connection channel for each remote (server or client) peer
-	if err = s.initRemoteConns(ctx, errs); err != nil {
+	if err = s.initRemoteConns(ctx); err != nil {
 		return
 	}
 
 	// set up local TCP server endpoints to forward
 	// connections from remote clients to
-	s.initLocalConns(ctx, errs)
+	s.initLocalConns(ctx)
 
 	slog.Debug("Started proxy service")
 	return
@@ -66,28 +67,20 @@ func (s *Service) Stop() (err error) {
 	return s.l.Close()
 }
 
-func (s *Service) createSocksListener(listenURI *url.URL) (err error) {
+func (s *Service) createSocksListener(ctx context.Context, listenURI *url.URL) (err error) {
 	server, err := socks5.New(&socks5.Config{
 		Dial: s.dialRemote,
 	})
 	if err != nil {
 		return
 	}
-	if s.l, err = net.Listen(listenURI.Scheme, listenURI.Host); err != nil {
+	lc := net.ListenConfig{}
+	if s.l, err = lc.Listen(ctx, listenURI.Scheme, listenURI.Host); err != nil {
 		return
 	}
-	s.errs.Go(func() (err error) {
-		if err = server.Serve(s.l); err == nil {
-			// TODO: implement reconnect ?
-			return
-		}
-		if opErr, ok := err.(*net.OpError); ok &&
-			opErr.Err.Error() == "use of closed network connection" {
-			err = nil
-			return
-		}
-		return
-	})
+	s.errs.Go(util.Retry(ctx, func() error {
+		return server.Serve(s.l)
+	}))
 	slog.Debug("SOCKS proxy is listening on:", "addr", toURL(s.l.Addr()))
 	return
 }
@@ -124,7 +117,7 @@ type pidConn struct {
 	mpc.PID
 }
 
-func (s *Service) initRemoteConns(ctx context.Context, errs *errgroup.Group) (err error) {
+func (s *Service) initRemoteConns(ctx context.Context) (err error) {
 	const logName = "remote peer connections"
 	nConns := len(s.mpc.PeerPIDs)
 	if nConns == 0 {
@@ -138,7 +131,7 @@ func (s *Service) initRemoteConns(ctx context.Context, errs *errgroup.Group) (er
 		remotePID := pid
 
 		s.errs.Go(func() (err error) {
-			conns, err := s.getRemoteConns(ctx, remotePID, s.errs)
+			conns, err := s.getRemoteConns(ctx, remotePID)
 			if err == nil {
 				pidConns <- &pidConn{conns, remotePID}
 			}
@@ -155,7 +148,7 @@ func (s *Service) initRemoteConns(ctx context.Context, errs *errgroup.Group) (er
 	return
 }
 
-func (s *Service) initLocalConns(ctx context.Context, errs *errgroup.Group) {
+func (s *Service) initLocalConns(ctx context.Context) {
 	const logSuffix = "local listeners for remote clients:"
 	slog.Debug("Initiating " + logSuffix)
 
@@ -176,7 +169,7 @@ func (s *Service) handleClientConns(ctx context.Context, localAddrs []netip.Addr
 		select {
 		case remoteConn := <-remoteConns:
 			s.errs.Go(func() error {
-				return proxyRemoteClient(ctx, remoteConn, localAddrs)
+				return s.proxyRemoteClient(ctx, remoteConn, localAddrs)
 			})
 		case <-ctx.Done():
 			return
@@ -186,59 +179,44 @@ func (s *Service) handleClientConns(ctx context.Context, localAddrs []netip.Addr
 
 const tcpBufSize = 4096 // TODO: measure performance and adjust as needed
 
-func proxyRemoteClient(ctx context.Context, remoteConn *conn.Conn, localAddrs []netip.AddrPort) (err error) {
-	n := 0
-	buf := make([]byte, tcpBufSize)
+func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn *conn.Conn, localAddrs []netip.AddrPort) (err error) {
+	localEOF := util.Permanent(errors.New("LocalEOF"))
+	defer util.Cleanup(&err, remoteConn.Close)
 
-	for {
+	err = util.Retry(ctx, func() (err error) {
 		var localConn *net.TCPConn
 		if localConn, err = getLocalConn(localAddrs, remoteConn); err != nil {
 			return
 		}
 		defer util.Cleanup(&err, localConn.Close)
 
-		for {
-			// read a request from the remote client
-			if n, err = remoteConn.Read(buf); err != nil {
-				if err == io.EOF || ctx.Err() == context.Canceled {
-					err = nil
-				}
-				return
-			}
+		errs, ectx := errgroup.WithContext(ctx)
 
-			// forward it to the local server
-			if _, err = localConn.Write(buf[:n]); err != nil {
-				if err == io.EOF {
-					err = nil
-					// re-establish local TCP connection
-					break // TODO: exponential backoff
-				} else if ctx.Err() == context.Canceled {
-					err = nil
-				}
-				return
+		// proxy requests: local server <- remote client
+		errs.Go(util.Retry(ectx, func() (err error) {
+			if _, err = io.Copy(localConn, remoteConn); err == io.EOF {
+				return localEOF
 			}
+			return
+		}))
 
-			// read a response from the local server
-			if n, err = localConn.Read(buf); err != nil {
-				if err == io.EOF {
-					err = nil
-					// re-establish local TCP connection
-					break // TODO: exponential backoff
-				} else if ctx.Err() == context.Canceled {
-					err = nil
-				}
-				return
+		// proxy responses: local server -> remote client
+		errs.Go(util.Retry(ectx, func() (err error) {
+			if _, err = io.Copy(remoteConn, localConn); err == nil {
+				// err == nil means local connection was closed,
+				// so we should exit and retry after recreating it
+				return localEOF
 			}
+			return
+		}))
 
-			// forward the response back to the remote client
-			if _, err = remoteConn.Write(buf[:n]); err != nil {
-				if err == io.EOF || ctx.Err() == context.Canceled {
-					err = nil
-				}
-				return
-			}
+		if err = errs.Wait(); err == localEOF {
+			err = nil
+			return // retry
 		}
-	}
+		return util.Permanent(err)
+	})()
+	return
 }
 
 func getLocalConn(localAddrs []netip.AddrPort, rc *conn.Conn) (lc *net.TCPConn, err error) {

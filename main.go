@@ -109,13 +109,13 @@ func run() (exitCode int, err error) {
 	errs, ctx := errgroup.WithContext(ctx)
 	defer cancel()
 
-	iceSvc, err := ice.NewService(ctx, args.SignalServerURI, args.StunServerURIs, args.StudyID, args.MPCConfig)
+	iceSvc, err := ice.NewService(ctx, args.SignalServerURI, args.StunServerURIs, args.StudyID, args.MPCConfig, errs)
 	if err != nil {
 		return
 	}
 	defer util.Cleanup(&err, iceSvc.Stop)
 
-	quicSvc, err := quic.NewService(args.MPCConfig, iceSvc.GetPacketConns)
+	quicSvc, err := quic.NewService(args.MPCConfig, iceSvc.GetPacketConns, errs)
 	if err != nil {
 		return
 	}

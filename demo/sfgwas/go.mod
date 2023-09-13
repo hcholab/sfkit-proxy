@@ -5,7 +5,7 @@ go 1.21.0
 require (
 	github.com/BurntSushi/toml v1.3.2
 	github.com/hcholab/sfgwas v0.0.0-20230721173306-041802b71401
-	golang.org/x/net v0.14.0
+	golang.org/x/net v0.15.0
 	golang.org/x/sync v0.3.0
 )
 
@@ -26,9 +26,9 @@ require (
 	go.dedis.ch/onet/v3 v3.2.10 // indirect
 	go.dedis.ch/protobuf v1.0.11 // indirect
 	go.etcd.io/bbolt v1.3.7 // indirect
-	golang.org/x/crypto v0.12.0 // indirect
-	golang.org/x/exp v0.0.0-20230817173708-d852ddb80c63 // indirect
-	golang.org/x/sys v0.11.0 // indirect
+	golang.org/x/crypto v0.13.0 // indirect
+	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
+	golang.org/x/sys v0.12.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	gonum.org/v1/gonum v0.14.0 // indirect
 	rsc.io/goversion v1.2.0 // indirect

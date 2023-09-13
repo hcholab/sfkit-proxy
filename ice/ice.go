@@ -3,24 +3,29 @@ package ice
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/url"
 
 	"github.com/pion/ice/v2"
 	"github.com/pion/stun"
 	"golang.org/x/exp/slices"
 	"golang.org/x/net/websocket"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/hcholab/sfkit-proxy/auth"
 	"github.com/hcholab/sfkit-proxy/conn"
 	"github.com/hcholab/sfkit-proxy/mpc"
+	"github.com/hcholab/sfkit-proxy/util"
 )
 
 type Service struct {
 	mpc      *mpc.Config
 	ws       *websocket.Conn
+	errs     *errgroup.Group
 	studyID  string
 	stunURIs []*stun.URI
 }
@@ -84,16 +89,11 @@ func DefaultSTUNServers() []string {
 	return slices.Clone(defaultSTUNServers)
 }
 
-func NewService(
-	ctx context.Context,
-	api *url.URL,
-	rawStunURIs []string,
-	studyID string,
-	mpcConf *mpc.Config,
-) (s *Service, err error) {
+func NewService(ctx context.Context, api *url.URL, rawStunURIs []string, studyID string, mpcConf *mpc.Config, errs *errgroup.Group) (s *Service, err error) {
 	s = &Service{
 		mpc:     mpcConf,
 		studyID: studyID,
+		errs:    errs,
 	}
 
 	// parse stun URIs
@@ -120,10 +120,7 @@ func NewService(
 // to subscribe to connections established by the protocol.
 //
 // Based on https://github.com/pion/ice/tree/master/examples/ping-pong
-func (s *Service) GetPacketConns(
-	ctx context.Context,
-	peerPID mpc.PID,
-) (_ <-chan *conn.PacketConn, _ io.Closer, err error) {
+func (s *Service) GetPacketConns(ctx context.Context, peerPID mpc.PID) (_ <-chan *conn.PacketConn, _ io.Closer, err error) {
 	conns := make(chan *conn.PacketConn, 1)
 
 	if peerPID == s.mpc.LocalPID {
@@ -138,7 +135,9 @@ func (s *Service) GetPacketConns(
 	}
 
 	// start listening for ICE signaling messages
-	go s.listenForSignals(ctx, a, conns)
+	s.errs.Go(util.Retry(ctx, func() error {
+		return s.handleSignals(ctx, a, conns)
+	}))
 
 	// when we have gathered a new ICE Candidate, send it to the remote peer(s)
 	if err = s.setupNewCandidateHandler(a, peerPID); err != nil {
@@ -276,36 +275,31 @@ func (s *Service) sendLocalCredentials(a *ice.Agent, targetPID mpc.PID) (err err
 
 type IceOp func(context.Context, string, string) (*ice.Conn, error)
 
-func (s *Service) listenForSignals(
-	ctx context.Context,
-	a *ice.Agent,
-	conns chan<- *conn.PacketConn,
-) {
-	for {
-		var msg Message
-		if err := websocket.JSON.Receive(s.ws, &msg); err != nil {
-			if err == io.EOF {
-				// TODO: implement reconnect
-				return
-			} else if ctx.Err() == context.Canceled {
-				return
-			}
-			slog.Error("Receiving signaling message", "err", err)
-			continue
+func (s *Service) handleSignals(ctx context.Context, a *ice.Agent, conns chan<- *conn.PacketConn) (err error) {
+	var msg Message
+	if err = websocket.JSON.Receive(s.ws, &msg); err != nil {
+		if err == io.EOF {
+			return
+		} else if errors.Is(err, net.ErrClosed) {
+			return util.Permanent(err)
 		}
-		slog.Debug("Received signaling message:", "msg", msg)
-
-		switch t := msg.Type; t {
-		case MessageTypeCandidate:
-			handleRemoteCandidate(a, msg.Data)
-		case MessageTypeCredential:
-			go s.handleRemoteCredential(a, msg, conns)
-		case MessageTypeError:
-			slog.Error("Signaling error: " + msg.Data)
-		default:
-			slog.Error("Unknown", "msg.Type", t, "msg", msg)
-		}
+		slog.Error("Receiving signaling message", "err", err)
+		err = nil // TODO: do not ignore ?
+		return
 	}
+	slog.Debug("Received signaling message:", "msg", msg)
+
+	switch t := msg.Type; t {
+	case MessageTypeCandidate:
+		handleRemoteCandidate(a, msg.Data)
+	case MessageTypeCredential:
+		go s.handleRemoteCredential(a, msg, conns)
+	case MessageTypeError:
+		slog.Error("Signaling error: " + msg.Data)
+	default:
+		slog.Error("Unknown", "msg.Type", t, "msg", msg)
+	}
+	return
 }
 
 func handleRemoteCandidate(a *ice.Agent, candidate string) {
