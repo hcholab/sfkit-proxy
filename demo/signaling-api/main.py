@@ -7,7 +7,6 @@ from typing import Awaitable, Callable, Dict, List
 import httpx
 from quart import Quart, abort, copy_current_websocket_context, websocket
 
-
 PID = int
 
 
@@ -72,13 +71,13 @@ async def handler():
     # check origin
     origin = websocket.headers.get("Origin")
     if origin != ORIGIN:
-        await Message(MessageType.ERROR, f"Unexpected Origin header").send()
+        await Message(MessageType.ERROR, "Unexpected Origin header").send()
         abort(401)
 
     # retrieve user ID
     user_id = await _get_user_id()
     if not user_id:
-        await Message(MessageType.ERROR, f"Missing authentication").send()
+        await Message(MessageType.ERROR, "Missing authentication").send()
         abort(401)
 
     # read study ID from the custom header
@@ -134,7 +133,10 @@ async def handler():
 
                 # and send it to the other party
                 if msg.targetPID < 0:
-                    await Message(MessageType.ERROR, f"Missing target PID: {msg}").send()
+                    await Message(
+                        MessageType.ERROR,
+                        f"Missing target PID: {msg}"
+                    ).send()
                     continue
                 elif msg.targetPID not in parties or msg.targetPID == pid:
                     await Message(
@@ -175,12 +177,13 @@ async def _get_subject_id():
             },
         )
         if res.is_error:
+            body = str(res.read())
             await Message(
                 MessageType.ERROR,
-                f"Unable to fetch subject ID from Google: {res.status_code} {str(res.read())}",
+                f"Unable to fetch subject ID from Google: {res.status_code} {body}",
             ).send()
         else:
-            return res.json()["sub"]
+            return str(res.json()["sub"])
 
 
 def _get_study(study_id: str):
