@@ -196,6 +196,8 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn *conn.Conn, 
 		errs.Go(util.Retry(ectx, func() (err error) {
 			if _, err = io.Copy(localConn, remoteConn); err == io.EOF {
 				return localEOF
+			} else if err == nil {
+				err = util.Permanent(io.EOF)
 			}
 			return
 		}))
@@ -206,6 +208,9 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn *conn.Conn, 
 				// err == nil means local connection was closed,
 				// so we should exit and retry after recreating it
 				return localEOF
+			}
+			if err == io.EOF {
+				err = util.Permanent(err)
 			}
 			return
 		}))

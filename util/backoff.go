@@ -8,8 +8,6 @@ import (
 	"github.com/cenkalti/backoff/v4"
 )
 
-var Permanent = backoff.Permanent
-
 // Retry retries a given operation until the operation
 // returns a PermanentError, or the context is canceled.
 func Retry(ctx context.Context, op backoff.Operation) func() error {
@@ -24,6 +22,13 @@ func Retry(ctx context.Context, op backoff.Operation) func() error {
 			}
 		}
 	}
+}
+
+func Permanent(err error) error {
+	if e, ok := err.(*backoff.PermanentError); ok {
+		return e
+	}
+	return backoff.Permanent(err)
 }
 
 func IsTimeout(err error) bool {
