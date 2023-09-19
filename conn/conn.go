@@ -1,6 +1,7 @@
 package conn
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net"
 
@@ -11,6 +12,7 @@ import (
 // PacketConn implements net.PacketConn interface, wrapping the underlying *ice.Conn
 type PacketConn struct {
 	*ice.Conn
+	TLSConf *tls.Config
 }
 
 func (c PacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {

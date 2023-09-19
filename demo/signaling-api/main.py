@@ -13,6 +13,7 @@ PID = int
 class MessageType(Enum):
     CANDIDATE = "candidate"
     CREDENTIAL = "credential"
+    CERTIFICATE = "certificate"
     ERROR = "error"
 
 

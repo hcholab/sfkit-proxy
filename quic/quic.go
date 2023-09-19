@@ -59,16 +59,11 @@ func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan *conn
 				tr := &quic.Transport{Conn: pc}
 				defer util.Cleanup(&err, tr.Close)
 
-				var tlsConf *tls.Config
-				if tlsConf, err = generateTLSConfig(pc.LocalAddr()); err != nil {
-					return util.Permanent(err)
-				}
-
 				if err = util.Retry(ctx, func() error {
 					if s.mpc.IsClient(peerPID) {
-						return s.handleClient(ctx, tr, tlsConf, peerPID, pc.RemoteAddr(), conns)
+						return s.handleClient(ctx, tr, pc.TLSConf, peerPID, pc.RemoteAddr(), conns)
 					} else {
-						return s.handleServer(ctx, tr, tlsConf, peerPID, conns)
+						return s.handleServer(ctx, tr, pc.TLSConf, peerPID, conns)
 					}
 				})(); err != nil {
 					slog.Error(err.Error())
@@ -92,6 +87,7 @@ func (s *Service) Stop() error {
 func (s *Service) handleClient(ctx context.Context, tr *quic.Transport, tlsConf *tls.Config, pid mpc.PID, addr net.Addr, conns chan<- *conn.Conn) (err error) {
 	var c quic.Connection
 	if c, err = tr.Dial(ctx, addr, tlsConf, s.qConf); err != nil {
+		slog.Error(err.Error())
 		return // give up to retry
 	}
 	slog.Info("Started QUIC client:", "peer", pid, "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr())
