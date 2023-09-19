@@ -32,7 +32,6 @@ type Args struct {
 }
 
 func parseArgs() (args Args, err error) {
-	listenURI := "udp://:0"
 	socksListenURI := "tcp://:8000"
 	signalServerURI := "ws://host.docker.internal:8000/api/ice" // TODO: change default for Terra
 	stunServers := strings.Join(ice.DefaultSTUNServers(), ",")
@@ -40,14 +39,8 @@ func parseArgs() (args Args, err error) {
 	mpcPID := 0
 
 	flag.StringVar(&signalServerURI, "api", signalServerURI, "ICE signaling server API")
-	flag.StringVar(&listenURI, "listen", listenURI, "Local listener URI")
 	flag.StringVar(&socksListenURI, "socks", socksListenURI, "Local SOCKS listener URI")
-	flag.StringVar(
-		&stunServers,
-		"stun",
-		stunServers,
-		"Comma-separated list of STUN/TURN server URIs, in the order of preference",
-	)
+	flag.StringVar(&stunServers, "stun", stunServers, "Comma-separated list of STUN/TURN server URIs, in the order of preference")
 
 	flag.StringVar(&mpcConfigPath, "mpc", mpcConfigPath, "Global MPC config path (.toml file)")
 	flag.StringVar(&args.StudyID, "study", "", "Study ID")
@@ -56,9 +49,6 @@ func parseArgs() (args Args, err error) {
 	flag.BoolVar(&args.Verbose, "v", false, "Verbose output")
 	flag.Parse()
 
-	if args.ListenURI, err = url.Parse(listenURI); err != nil {
-		return
-	}
 	if args.SocksListenURI, err = url.Parse(socksListenURI); err != nil {
 		return
 	} else if args.SocksListenURI.Scheme != "tcp" {
