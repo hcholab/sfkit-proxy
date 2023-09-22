@@ -10,8 +10,10 @@ import (
 	"log/slog"
 	"net"
 	"net/url"
+	"os"
 
 	"github.com/pion/ice/v2"
+	"github.com/pion/logging"
 	"github.com/pion/stun"
 	"golang.org/x/exp/slices"
 	"golang.org/x/net/websocket"
@@ -207,6 +209,7 @@ func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent,
 		},
 		UDPMux: ice.NewUDPMuxDefault(ice.UDPMuxParams{
 			UDPConn: udpConn,
+			Logger:  logging.NewDefaultLeveledLoggerForScope("[----ICE-----]", logging.LogLevelWarn, os.Stderr),
 		}),
 	})
 	if err == nil {

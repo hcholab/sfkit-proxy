@@ -11,6 +11,7 @@ require (
 	github.com/fatih/color v1.15.0
 	github.com/hcholab/sfgwas v0.0.0-20230721173306-041802b71401
 	github.com/pion/ice/v2 v2.3.11
+	github.com/pion/logging v0.2.2
 	github.com/pion/stun v0.6.1
 	github.com/quic-go/quic-go v0.38.1
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
@@ -52,7 +53,6 @@ require (
 	github.com/montanaflynn/stats v0.7.1 // indirect
 	github.com/onsi/ginkgo/v2 v2.12.0 // indirect
 	github.com/pion/dtls/v2 v2.2.7 // indirect
-	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/mdns v0.0.9 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/transport/v2 v2.2.4 // indirect
