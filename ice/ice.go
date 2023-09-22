@@ -312,7 +312,7 @@ func (s *Service) handleCerts(ctx context.Context, peerPID mpc.PID, peerCerts <-
 			}
 			peerToLocalCerts[peerAddr.String()] = &localCert
 			peerAddrs[peerAddr.String()] = peerAddr
-			slog.Debug("Added certificate for", "peerAddr", peerAddr)
+			slog.Debug("Added local certificate for", "localAddr", conn.LocalAddr(), "peerAddr", peerAddr)
 
 		case peerCert := <-peerCerts:
 			localCert, ok := peerToLocalCerts[peerCert.Addr]
@@ -330,7 +330,7 @@ func (s *Service) handleCerts(ctx context.Context, peerPID mpc.PID, peerCerts <-
 				err = e
 				break
 			}
-			slog.Debug("Created TLSConf for", "peerAddr", peerAddr)
+			slog.Debug("Created TLS config for", "peerAddr", peerAddr)
 			tlsConfs <- &TLSConf{Config: tlsConf, RemoteAddr: peerAddr}
 		case <-ctx.Done():
 			return ctx.Err()
@@ -354,6 +354,7 @@ func (s *Service) generateConnCert(conn net.Conn, peerPID mpc.PID) (peerAddr net
 	if localCert, certPEM, err = generateTLSCert(localAddr.IP); err != nil {
 		return
 	}
+	slog.Debug("Generated local certificate for", "localAddr", localAddr, "peerPID", peerPID)
 
 	cert, err := json.Marshal(Certificate{
 		Addr: localAddr.String(),
@@ -373,7 +374,7 @@ func (s *Service) generateConnCert(conn net.Conn, peerPID mpc.PID) (peerAddr net
 		Data:      string(cert),
 	}
 	if err = websocket.JSON.Send(s.ws, msg); err == nil {
-		slog.Debug("Generated cert for", "peerAddr", peerAddr)
+		slog.Debug("Sent local certificate for", "localAddr", localAddr, "peerAddr", peerAddr, "peerPID", peerPID)
 	}
 	return
 }

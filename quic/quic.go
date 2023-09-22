@@ -47,6 +47,7 @@ func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan net.C
 		return
 	}
 	tr := &quic.Transport{Conn: udpConn}
+	slog.Debug("Created QUIC transport:", "localAddr", tr.Conn.LocalAddr())
 
 	rpc := newRawPacketConn(ctx, tr)
 	tcs, c, err := s.getTLSConf(ctx, peerPID, rpc)
@@ -62,7 +63,7 @@ func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan net.C
 		err = util.Retry(ctx, func() (err error) {
 			select {
 			case tc := <-tcs:
-				slog.Debug("Obtained connection for", "peerPID", peerPID)
+				slog.Debug("Using TLS config for", "peerPID", peerPID)
 
 				if err = util.Retry(ctx, func() error {
 					if s.mpc.IsClient(peerPID) {
