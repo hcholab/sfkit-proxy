@@ -127,12 +127,12 @@ type TLSConf struct {
 	RemoteAddr net.Addr
 }
 
-// GetPacketConns initiates the ICE protocol with a peer,
+// GetTLSConfigs initiates the ICE protocol with a peer,
 // and returns a *conn.PacketConn channel, which allows the client
 // to subscribe to connections established by the protocol.
 //
 // Based on https://github.com/pion/ice/tree/master/examples/ping-pong
-func (s *Service) GetPacketConns(ctx context.Context, peerPID mpc.PID, udpConn net.PacketConn) (_ <-chan *TLSConf, _ io.Closer, err error) {
+func (s *Service) GetTLSConfigs(ctx context.Context, peerPID mpc.PID, udpConn net.PacketConn) (_ <-chan *TLSConf, _ io.Closer, err error) {
 	tlsConfs := make(chan *TLSConf, 1)
 	peerCerts := make(chan *Certificate, 1)
 	conns := make(chan net.Conn, 1)

@@ -105,7 +105,7 @@ func run() (exitCode int, err error) {
 	}
 	defer util.Cleanup(&err, iceSvc.Stop)
 
-	quicSvc, err := quic.NewService(args.MPCConfig, iceSvc.GetPacketConns, errs)
+	quicSvc, err := quic.NewService(args.MPCConfig, iceSvc.GetTLSConfigs, errs)
 	if err != nil {
 		return
 	}
