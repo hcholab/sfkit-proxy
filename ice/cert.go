@@ -14,6 +14,7 @@ import (
 
 const (
 	Proto         = "sfkit"
+	CertValidity  = 24 * time.Hour
 	CertKeyLength = 2048
 )
 
@@ -23,7 +24,7 @@ func generateTLSCert(ipAddr net.IP) (tlsCert tls.Certificate, pemCert string, er
 	template := x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		IPAddresses:  []net.IP{ipAddr},
-		NotAfter:     time.Now().Add(time.Hour),
+		NotAfter:     time.Now().Add(CertValidity),
 	}
 	key, err := rsa.GenerateKey(rand.Reader, CertKeyLength)
 	if err != nil {
