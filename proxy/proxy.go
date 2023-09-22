@@ -13,18 +13,17 @@ import (
 	"github.com/armon/go-socks5"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/hcholab/sfkit-proxy/conn"
 	"github.com/hcholab/sfkit-proxy/mpc"
 	"github.com/hcholab/sfkit-proxy/util"
 )
 
-type remoteConnsGetter func(context.Context, mpc.PID) (<-chan *conn.Conn, error)
+type remoteConnsGetter func(context.Context, mpc.PID) (<-chan net.Conn, error)
 
 type Service struct {
 	mpc *mpc.Config
 	l   net.Listener
 
-	remoteConns    map[mpc.PID]<-chan *conn.Conn
+	remoteConns    map[mpc.PID]<-chan net.Conn
 	getRemoteConns remoteConnsGetter
 
 	errs *errgroup.Group
@@ -35,7 +34,7 @@ func NewService(ctx context.Context, listenURI *url.URL, mpcConf *mpc.Config, rc
 
 	s = &Service{
 		mpc:            mpcConf,
-		remoteConns:    make(map[mpc.PID]<-chan *conn.Conn),
+		remoteConns:    make(map[mpc.PID]<-chan net.Conn),
 		getRemoteConns: rcg,
 		errs:           errs,
 	}
@@ -113,7 +112,7 @@ func (s *Service) dialRemote(ctx context.Context, network, addr string) (conn ne
 }
 
 type pidConn struct {
-	Conns <-chan *conn.Conn
+	Conns <-chan net.Conn
 	mpc.PID
 }
 
@@ -164,7 +163,7 @@ func (s *Service) initLocalConns(ctx context.Context) {
 	slog.Debug("Initiated "+logSuffix, "peers", clientPIDs)
 }
 
-func (s *Service) handleClientConns(ctx context.Context, localAddrs []netip.AddrPort, remoteConns <-chan *conn.Conn) (err error) {
+func (s *Service) handleClientConns(ctx context.Context, localAddrs []netip.AddrPort, remoteConns <-chan net.Conn) (err error) {
 	for {
 		select {
 		case remoteConn := <-remoteConns:
@@ -179,7 +178,7 @@ func (s *Service) handleClientConns(ctx context.Context, localAddrs []netip.Addr
 
 const tcpBufSize = 4096 // TODO: measure performance and adjust as needed
 
-func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn *conn.Conn, localAddrs []netip.AddrPort) (err error) {
+func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, localAddrs []netip.AddrPort) (err error) {
 	localEOF := util.Permanent(errors.New("LocalEOF"))
 	defer util.Cleanup(&err, remoteConn.Close)
 
@@ -224,7 +223,7 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn *conn.Conn, 
 	return
 }
 
-func getLocalConn(localAddrs []netip.AddrPort, rc *conn.Conn) (lc *net.TCPConn, err error) {
+func getLocalConn(localAddrs []netip.AddrPort, rc net.Conn) (lc *net.TCPConn, err error) {
 	// read destination port in big-endian format from the remote peer
 	bPort := make([]byte, 2)
 	if _, err = io.ReadFull(rc, bPort); err != nil {

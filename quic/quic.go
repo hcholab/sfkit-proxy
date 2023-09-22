@@ -11,23 +11,23 @@ import (
 	"github.com/quic-go/quic-go"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/hcholab/sfkit-proxy/conn"
+	"github.com/hcholab/sfkit-proxy/ice"
 	"github.com/hcholab/sfkit-proxy/mpc"
 	"github.com/hcholab/sfkit-proxy/util"
 )
 
-type packetConnsGetter func(context.Context, mpc.PID) (<-chan *conn.PacketConn, io.Closer, error)
+type tlsConfGetter func(context.Context, mpc.PID, net.PacketConn) (<-chan *ice.TLSConf, io.Closer, error)
 
 type Service struct {
-	mpc            *mpc.Config
-	qConf          *quic.Config
-	errs           *errgroup.Group
-	getPacketConns packetConnsGetter
+	mpc        *mpc.Config
+	qConf      *quic.Config
+	errs       *errgroup.Group
+	getTLSConf tlsConfGetter
 }
 
 const retryMs = 1000
 
-func NewService(mpcConf *mpc.Config, pc packetConnsGetter, errs *errgroup.Group) (s *Service, err error) {
+func NewService(mpcConf *mpc.Config, pc tlsConfGetter, errs *errgroup.Group) (s *Service, err error) {
 	qc := &quic.Config{
 		KeepAlivePeriod: 15 * time.Second,
 	}
@@ -39,31 +39,36 @@ func NewService(mpcConf *mpc.Config, pc packetConnsGetter, errs *errgroup.Group)
 // GetConns establishes a QUIC connection stream with a peer,
 // and returns a *conn.Conn channel, which allows the client
 // to subscribe to changes in the connection.
-func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan *conn.Conn, err error) {
+func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan net.Conn, err error) {
 	slog.Debug("Getting connection for", "peerPID", peerPID)
-	pcs, c, err := s.getPacketConns(ctx, peerPID)
+
+	udpConn, err := net.ListenUDP("udp", nil)
+	if err != nil {
+		return
+	}
+	tr := &quic.Transport{Conn: udpConn}
+
+	rpc := newRawPacketConn(ctx, tr)
+	tcs, c, err := s.getTLSConf(ctx, peerPID, rpc)
 	if err != nil {
 		return
 	}
 
-	conns := make(chan *conn.Conn, s.mpc.Threads)
+	conns := make(chan net.Conn, s.mpc.Threads)
 	s.errs.Go(func() (err error) {
+		defer util.Cleanup(&err, tr.Close)
 		defer util.Cleanup(&err, c.Close)
 
 		err = util.Retry(ctx, func() (err error) {
 			select {
-			case pc := <-pcs:
+			case tc := <-tcs:
 				slog.Debug("Obtained connection for", "peerPID", peerPID)
-				defer util.Cleanup(&err, pc.Close)
-
-				tr := &quic.Transport{Conn: pc}
-				defer util.Cleanup(&err, tr.Close)
 
 				if err = util.Retry(ctx, func() error {
 					if s.mpc.IsClient(peerPID) {
-						return s.handleClient(ctx, tr, pc.TLSConf, peerPID, pc.RemoteAddr(), conns)
+						return s.handleClient(ctx, tr, tc.Config, peerPID, tc.RemoteAddr, conns)
 					} else {
-						return s.handleServer(ctx, tr, pc.TLSConf, peerPID, conns)
+						return s.handleServer(ctx, tr, tc.Config, peerPID, conns)
 					}
 				})(); err != nil {
 					slog.Error(err.Error())
@@ -84,7 +89,7 @@ func (s *Service) Stop() error {
 	return nil
 }
 
-func (s *Service) handleClient(ctx context.Context, tr *quic.Transport, tlsConf *tls.Config, pid mpc.PID, addr net.Addr, conns chan<- *conn.Conn) (err error) {
+func (s *Service) handleClient(ctx context.Context, tr *quic.Transport, tlsConf *tls.Config, pid mpc.PID, addr net.Addr, conns chan<- net.Conn) (err error) {
 	var c quic.Connection
 	if c, err = tr.Dial(ctx, addr, tlsConf, s.qConf); err != nil {
 		slog.Error(err.Error())
@@ -106,13 +111,20 @@ func (s *Service) handleClient(ctx context.Context, tr *quic.Transport, tlsConf 
 		slog.Debug("Opened outgoing QUIC stream:", "peer", pid, "remoteAddr", c.RemoteAddr())
 
 		// non-blocking until len(conns) == s.mpc.Threads
-		conns <- &conn.Conn{Connection: c, Stream: st}
+		conns <- &Conn{Connection: c, Stream: st}
 		return
 	})()
 	return
 }
 
-func (s *Service) handleServer(ctx context.Context, tr *quic.Transport, tlsConf *tls.Config, pid mpc.PID, conns chan<- *conn.Conn) (err error) {
+// Conn implements net.Conn interface,
+// wrapping the underlying quic.Connection and quic.Stream
+type Conn struct {
+	quic.Connection
+	quic.Stream
+}
+
+func (s *Service) handleServer(ctx context.Context, tr *quic.Transport, tlsConf *tls.Config, pid mpc.PID, conns chan<- net.Conn) (err error) {
 	l, err := tr.Listen(tlsConf, s.qConf)
 	defer util.Cleanup(&err, l.Close)
 	slog.Info("Started QUIC server:", "peer", pid, "localAddr", l.Addr())
@@ -137,7 +149,7 @@ func (s *Service) handleServer(ctx context.Context, tr *quic.Transport, tlsConf 
 	return
 }
 
-func (s *Service) handleServerConn(ctx context.Context, pid mpc.PID, conns chan<- *conn.Conn, c quic.Connection) (err error) {
+func (s *Service) handleServerConn(ctx context.Context, pid mpc.PID, conns chan<- net.Conn, c quic.Connection) (err error) {
 	var st quic.Stream
 	if st, err = c.AcceptStream(ctx); err != nil {
 		if util.IsCanceledOrTimeout(err) {
@@ -151,6 +163,6 @@ func (s *Service) handleServerConn(ctx context.Context, pid mpc.PID, conns chan<
 	slog.Debug("Accepted incoming QUIC stream:", "peer", pid, "remoteAddr", c.RemoteAddr())
 
 	// non-blocking until len(conns) == s.mpc.Threads
-	conns <- &conn.Conn{Connection: c, Stream: st}
+	conns <- &Conn{Connection: c, Stream: st}
 	return
 }

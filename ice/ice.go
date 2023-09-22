@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -19,7 +18,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/hcholab/sfkit-proxy/auth"
-	"github.com/hcholab/sfkit-proxy/conn"
 	"github.com/hcholab/sfkit-proxy/mpc"
 	"github.com/hcholab/sfkit-proxy/util"
 )
@@ -123,15 +121,21 @@ func NewService(ctx context.Context, api *url.URL, rawStunURIs []string, studyID
 	return
 }
 
+// TLSConf wraps *tls.Config and net.Addr of remote peer
+type TLSConf struct {
+	*tls.Config
+	RemoteAddr net.Addr
+}
+
 // GetPacketConns initiates the ICE protocol with a peer,
 // and returns a *conn.PacketConn channel, which allows the client
 // to subscribe to connections established by the protocol.
 //
 // Based on https://github.com/pion/ice/tree/master/examples/ping-pong
-func (s *Service) GetPacketConns(ctx context.Context, peerPID mpc.PID) (_ <-chan *conn.PacketConn, _ io.Closer, err error) {
-	packetConns := make(chan *conn.PacketConn, 1)
-	conns := make(chan *ice.Conn, 1)
+func (s *Service) GetPacketConns(ctx context.Context, peerPID mpc.PID, udpConn net.PacketConn) (_ <-chan *TLSConf, _ io.Closer, err error) {
+	tlsConfs := make(chan *TLSConf, 1)
 	peerCerts := make(chan *Certificate, 1)
+	conns := make(chan net.Conn, 1)
 
 	if peerPID == s.mpc.LocalPID {
 		err = fmt.Errorf("cannot connect to self")
@@ -139,7 +143,7 @@ func (s *Service) GetPacketConns(ctx context.Context, peerPID mpc.PID) (_ <-chan
 	}
 
 	// initialize the ICE agent
-	a, err := createICEAgent(s.stunURIs)
+	a, err := createICEAgent(s.stunURIs, udpConn)
 	if err != nil {
 		return
 	}
@@ -151,7 +155,7 @@ func (s *Service) GetPacketConns(ctx context.Context, peerPID mpc.PID) (_ <-chan
 
 	// generate TLS certificates and exhange them with peers
 	s.errs.Go(util.Retry(ctx, func() error {
-		return s.handleCerts(ctx, peerPID, peerCerts, conns, packetConns)
+		return s.handleCerts(ctx, peerPID, peerCerts, conns, tlsConfs)
 	}))
 
 	// when we have gathered a new ICE Candidate, send it to the remote peer(s)
@@ -171,7 +175,7 @@ func (s *Service) GetPacketConns(ctx context.Context, peerPID mpc.PID) (_ <-chan
 
 	// start trickle ICE candidate gathering process
 	slog.Debug("Gathering ICE candidates for", "peer", peerPID)
-	return packetConns, a, a.GatherCandidates()
+	return tlsConfs, a, a.GatherCandidates()
 }
 
 func (s *Service) connectWebSocket(ctx context.Context, api *url.URL, studyID string) (err error) {
@@ -194,13 +198,19 @@ func (s *Service) connectWebSocket(ctx context.Context, api *url.URL, studyID st
 	return
 }
 
-func createICEAgent(stunURIs []*stun.URI) (a *ice.Agent, err error) {
+func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent, err error) {
 	a, err = ice.NewAgent(&ice.AgentConfig{
 		Urls: stunURIs,
 		NetworkTypes: []ice.NetworkType{
 			ice.NetworkTypeUDP4,
 			ice.NetworkTypeUDP6,
 		},
+		// UDPMux: ice.NewUDPMuxDefault(ice.UDPMuxParams{
+		// 	UDPConn: udpConn,
+		// }),
+		UDPMuxSrflx: ice.NewUniversalUDPMuxDefault(ice.UniversalUDPMuxParams{
+			UDPConn: udpConn,
+		}),
 	})
 	if err == nil {
 		slog.Debug("Created ICE agent")
@@ -288,9 +298,9 @@ func (s *Service) sendLocalCredentials(a *ice.Agent, targetPID mpc.PID) (err err
 	return
 }
 
-func (s *Service) handleCerts(ctx context.Context, peerPID mpc.PID, peerCerts <-chan *Certificate, conns <-chan *ice.Conn, packetConns chan<- *conn.PacketConn) error {
+func (s *Service) handleCerts(ctx context.Context, peerPID mpc.PID, peerCerts <-chan *Certificate, conns <-chan net.Conn, tlsConfs chan<- *TLSConf) error {
 	peerToLocalCerts := make(map[string]*tls.Certificate)
-	peerToConns := make(map[string]*ice.Conn)
+	peerAddrs := make(map[string]net.Addr)
 
 	return util.Retry(ctx, func() (err error) {
 		select {
@@ -301,7 +311,8 @@ func (s *Service) handleCerts(ctx context.Context, peerPID mpc.PID, peerCerts <-
 				break
 			}
 			peerToLocalCerts[peerAddr.String()] = &localCert
-			peerToConns[peerAddr.String()] = conn
+			peerAddrs[peerAddr.String()] = peerAddr
+			slog.Debug("Added certificate for", "peerAddr", peerAddr)
 
 		case peerCert := <-peerCerts:
 			localCert, ok := peerToLocalCerts[peerCert.Addr]
@@ -309,18 +320,18 @@ func (s *Service) handleCerts(ctx context.Context, peerPID mpc.PID, peerCerts <-
 				err = fmt.Errorf("no local certificate found for peer address %s", peerCert.Addr)
 				break
 			}
-			c, ok := peerToConns[peerCert.Addr]
+			peerAddr, ok := peerAddrs[peerCert.Addr]
 			if !ok {
-				err = fmt.Errorf("no connection found for peer address %s", peerCert.Addr)
+				err = fmt.Errorf("peer address %s not found", peerCert.Addr)
 				break
 			}
-			tlsConf, e := getTLSConfig(s.mpc.IsClient(peerPID), localCert, []byte(peerCert.PEM))
+			tlsConf, e := getTLSConfig(s.mpc.IsClient(peerPID), localCert, peerCert)
 			if e != nil {
 				err = e
 				break
 			}
-			slog.Debug("Created PacketConn", "tlsConf.ClientCAs", tlsConf.ClientCAs)
-			packetConns <- &conn.PacketConn{Conn: c, TLSConf: tlsConf}
+			slog.Debug("Created TLSConf for", "peerAddr", peerAddr)
+			tlsConfs <- &TLSConf{Config: tlsConf, RemoteAddr: peerAddr}
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -331,7 +342,7 @@ func (s *Service) handleCerts(ctx context.Context, peerPID mpc.PID, peerCerts <-
 	})()
 }
 
-func (s *Service) generateConnCert(conn *ice.Conn, peerPID mpc.PID) (peerAddr net.Addr, localCert tls.Certificate, err error) {
+func (s *Service) generateConnCert(conn net.Conn, peerPID mpc.PID) (peerAddr net.Addr, localCert tls.Certificate, err error) {
 	peerAddr = conn.RemoteAddr()
 	localAddr, ok := conn.LocalAddr().(*net.UDPAddr)
 	if !ok {
@@ -339,17 +350,14 @@ func (s *Service) generateConnCert(conn *ice.Conn, peerPID mpc.PID) (peerAddr ne
 		return
 	}
 
-	if localCert, err = generateTLSCert(localAddr.IP); err != nil {
+	var certPEM string
+	if localCert, certPEM, err = generateTLSCert(localAddr.IP); err != nil {
 		return
 	}
 
-	certPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: localCert.Certificate[0],
-	})
 	cert, err := json.Marshal(Certificate{
 		Addr: localAddr.String(),
-		PEM:  string(certPEM),
+		PEM:  certPEM,
 	})
 	if err != nil {
 		err = fmt.Errorf("serializing certificate with addr=%s PEM=%s: %s", localAddr, certPEM, err)
@@ -370,9 +378,9 @@ func (s *Service) generateConnCert(conn *ice.Conn, peerPID mpc.PID) (peerAddr ne
 	return
 }
 
-type IceOp func(context.Context, string, string) (*ice.Conn, error)
+type ConnOp func(context.Context, string, string) (net.Conn, error)
 
-func (s *Service) handleSignals(ctx context.Context, a *ice.Agent, conns chan<- *ice.Conn, peerCerts chan<- *Certificate) (err error) {
+func (s *Service) handleSignals(ctx context.Context, a *ice.Agent, conns chan<- net.Conn, peerCerts chan<- *Certificate) (err error) {
 	var msg Message
 	if err = websocket.JSON.Receive(s.ws, &msg); err != nil {
 		if err == io.EOF {
@@ -414,7 +422,7 @@ func handleRemoteCandidate(a *ice.Agent, candidate string) {
 	slog.Debug("Added remote", "candidate", c)
 }
 
-func (s *Service) handleRemoteCredential(a *ice.Agent, msg Message, conns chan<- *ice.Conn) {
+func (s *Service) handleRemoteCredential(a *ice.Agent, msg Message, conns chan<- net.Conn) {
 	var cred Credential
 	var err error
 	if err = json.Unmarshal([]byte(msg.Data), &cred); err != nil {
