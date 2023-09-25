@@ -305,44 +305,45 @@ func (s *Service) sendLocalCredentials(a *ice.Agent, targetPID mpc.PID) (err err
 
 func (s *Service) handleCerts(ctx context.Context, peerPID mpc.PID, peerCerts <-chan *Certificate, conns <-chan net.Conn, tlsConfs chan<- *TLSConf) error {
 	peerToLocalCerts := make(map[string]*tls.Certificate)
-	peerAddrs := make(map[string]net.Addr)
+	peerToRemoteCerts := make(map[string]*Certificate)
 
 	return util.Retry(ctx, func() (err error) {
+		var peerAddr net.Addr
 		select {
 		case conn := <-conns:
-			peerAddr, localCert, e := s.generateConnCert(conn, peerPID)
-			if e != nil {
-				err = e
+			var localCert tls.Certificate
+			if peerAddr, localCert, err = s.generateConnCert(conn, peerPID); err != nil {
 				break
 			}
 			peerToLocalCerts[peerAddr.String()] = &localCert
-			peerAddrs[peerAddr.String()] = peerAddr
 			slog.Debug("Added local certificate for", "localAddr", conn.LocalAddr(), "peerAddr", peerAddr)
 
 		case peerCert := <-peerCerts:
-			localCert, ok := peerToLocalCerts[peerCert.Addr]
-			if !ok {
-				err = fmt.Errorf("no local certificate found for peer address %s", peerCert.Addr)
-				break
+			if peerAddr, err = net.ResolveUDPAddr("udp", peerCert.Addr); err != nil {
+				return
 			}
-			peerAddr, ok := peerAddrs[peerCert.Addr]
-			if !ok {
-				err = fmt.Errorf("peer address %s not found", peerCert.Addr)
-				break
-			}
-			tlsConf, e := getTLSConfig(s.mpc.IsClient(peerPID), localCert, peerCert)
-			if e != nil {
-				err = e
-				break
-			}
-			slog.Debug("Created TLS config for", "peerAddr", peerAddr)
-			tlsConfs <- &TLSConf{Config: tlsConf, RemoteAddr: peerAddr}
+			peerToRemoteCerts[peerCert.Addr] = peerCert
+			slog.Debug("Added remote certificate for", "peerAddr", peerAddr)
+
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 		if err != nil {
 			slog.Error(err.Error())
 		}
+
+		// Check when both certs have been received
+		localCert := peerToLocalCerts[peerAddr.String()]
+		peerCert := peerToRemoteCerts[peerAddr.String()]
+		if localCert == nil || peerCert == nil {
+			return
+		}
+		tlsConf, err := getTLSConfig(s.mpc.IsClient(peerPID), localCert, peerCert)
+		if err != nil {
+			return
+		}
+		tlsConfs <- &TLSConf{Config: tlsConf, RemoteAddr: peerAddr}
+		slog.Debug("Created TLS config for", "peerAddr", peerAddr)
 		return
 	})()
 }
