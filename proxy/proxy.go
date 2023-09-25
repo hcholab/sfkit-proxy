@@ -148,10 +148,14 @@ func (s *Service) initRemoteConns(ctx context.Context) (err error) {
 }
 
 func (s *Service) initLocalConns(ctx context.Context) {
-	const logSuffix = "local listeners for remote clients:"
+	const logSuffix = "local listeners for remote clients"
+	nClients := len(s.mpc.PIDClients)
+	if nClients == 0 {
+		slog.Warn("No " + logSuffix + " to initiate")
+		return
+	}
+	clientPIDs := make([]mpc.PID, 0, nClients)
 	slog.Debug("Initiating " + logSuffix)
-
-	clientPIDs := make([]mpc.PID, 0, len(s.mpc.PIDClients))
 
 	for clientPID, addrs := range s.mpc.PIDClients {
 		remoteConns := s.remoteConns[clientPID]
