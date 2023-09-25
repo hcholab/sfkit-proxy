@@ -235,7 +235,12 @@ func (s *Service) setupNewCandidateHandler(a *ice.Agent, targetPID mpc.PID) (err
 		if c == nil {
 			return
 		}
+		if net.ParseIP(c.Address()).IsLoopback() {
+			slog.Debug("Ignoring loopback address", "candidate", c)
+			return
+		}
 		slog.Debug("Gathered ICE candidate:", "candidate", c)
+
 		msg := Message{
 			// IDs are not authoritative, but useful for debugging
 			SourcePID: s.mpc.LocalPID,
@@ -431,6 +436,7 @@ func (s *Service) handleRemoteCredential(a *ice.Agent, msg Message, conns chan<-
 		return
 	}
 	slog.Debug("Obtained remote", "cred", cred)
+
 	iceOp := a.Accept
 	if s.mpc.IsClient(msg.SourcePID) {
 		slog.Debug("Dialing ICE candidate", "remotePID", msg.SourcePID)
@@ -441,6 +447,16 @@ func (s *Service) handleRemoteCredential(a *ice.Agent, msg Message, conns chan<-
 	c, err := iceOp(context.TODO(), cred.Ufrag, cred.Pwd)
 	if err != nil {
 		slog.Error("ICE operation:", "err", err)
+		return
+	}
+
+	addr, err := net.ResolveUDPAddr("udp", c.LocalAddr().String())
+	if err != nil {
+		slog.Error("Resolving UDP address:", "err", err)
+		return
+	}
+	if addr.IP.IsLoopback() {
+		slog.Debug("Ignoring loopback address", "conn", c)
 		return
 	}
 	slog.Info("Established ICE connection:", "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr())
