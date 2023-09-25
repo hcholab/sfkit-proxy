@@ -3,6 +3,7 @@ package quic
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -16,22 +17,22 @@ import (
 	"github.com/hcholab/sfkit-proxy/util"
 )
 
-type tlsConfGetter func(context.Context, mpc.PID, net.PacketConn) (<-chan *ice.TLSConf, io.Closer, error)
+type tlsConfsGetter func(context.Context, mpc.PID, []net.PacketConn) (<-chan *ice.TLSConf, io.Closer, error)
 
 type Service struct {
-	mpc        *mpc.Config
-	qConf      *quic.Config
-	errs       *errgroup.Group
-	getTLSConf tlsConfGetter
+	mpc         *mpc.Config
+	qConf       *quic.Config
+	errs        *errgroup.Group
+	getTLSConfs tlsConfsGetter
 }
 
 const retryMs = 1000
 
-func NewService(mpcConf *mpc.Config, pc tlsConfGetter, errs *errgroup.Group) (s *Service, err error) {
+func NewService(mpcConf *mpc.Config, tcg tlsConfsGetter, errs *errgroup.Group) (s *Service, err error) {
 	qc := &quic.Config{
 		KeepAlivePeriod: 15 * time.Second,
 	}
-	s = &Service{mpcConf, qc, errs, pc}
+	s = &Service{mpcConf, qc, errs, tcg}
 	slog.Debug("Started QUIC service")
 	return
 }
@@ -42,28 +43,38 @@ func NewService(mpcConf *mpc.Config, pc tlsConfGetter, errs *errgroup.Group) (s 
 func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan net.Conn, err error) {
 	slog.Debug("Getting connection for", "peerPID", peerPID)
 
-	udpConn, err := net.ListenUDP("udp", nil)
+	trs, err := listenUDP()
 	if err != nil {
+		slog.Error(err.Error())
 		return
 	}
-	tr := &quic.Transport{Conn: udpConn}
-	slog.Debug("Created QUIC transport:", "localAddr", tr.Conn.LocalAddr())
 
-	rpc := newRawPacketConn(ctx, tr)
-	tcs, c, err := s.getTLSConf(ctx, peerPID, rpc)
+	rpcs := make([]net.PacketConn, 0, len(trs))
+	for _, tr := range trs {
+		rpcs = append(rpcs, newRawPacketConn(ctx, tr))
+	}
+
+	tcs, c, err := s.getTLSConfs(ctx, peerPID, rpcs)
 	if err != nil {
 		return
 	}
 
 	conns := make(chan net.Conn, s.mpc.Threads)
 	s.errs.Go(func() (err error) {
-		defer util.Cleanup(&err, tr.Close)
+		for _, tr := range trs {
+			defer util.Cleanup(&err, tr.Close)
+		}
 		defer util.Cleanup(&err, c.Close)
 
 		err = util.Retry(ctx, func() (err error) {
 			select {
 			case tc := <-tcs:
-				slog.Debug("Using TLS config for", "peerPID", peerPID)
+				tr, ok := trs[tc.LocalAddr.String()]
+				if !ok {
+					err = util.Permanent(fmt.Errorf("no transport for %s", tc.LocalAddr))
+					return
+				}
+				slog.Debug("Using TLS config for", "localAddr", tc.LocalAddr, "peerPID", peerPID)
 
 				if err = util.Retry(ctx, func() error {
 					if s.mpc.IsClient(peerPID) {
@@ -83,6 +94,31 @@ func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan net.C
 		return
 	})
 	return conns, nil
+}
+
+func listenUDP() (trs map[string]*quic.Transport, err error) {
+	trs = make(map[string]*quic.Transport)
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return
+	}
+	for _, a := range addrs {
+		addr, ok := a.(*net.IPNet)
+		if !ok || addr.IP.IsLoopback() {
+			continue
+		}
+		udpAddr, e := net.ResolveUDPAddr("udp", addr.IP.String()+":0")
+		if e != nil {
+			return nil, e
+		}
+		conn, e := net.ListenUDP("udp", udpAddr)
+		if e != nil {
+			return nil, e
+		}
+		trs[conn.LocalAddr().String()] = &quic.Transport{Conn: conn}
+		slog.Debug("Created QUIC transport:", "localAddr", conn.LocalAddr())
+	}
+	return
 }
 
 func (s *Service) Stop() error {
