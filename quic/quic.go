@@ -107,7 +107,7 @@ func listenUDP() (trs map[string]*quic.Transport, err error) {
 		if !ok || addr.IP.IsLoopback() {
 			continue
 		}
-		udpAddr, e := net.ResolveUDPAddr("udp", addr.IP.String()+":0")
+		udpAddr, e := net.ResolveUDPAddr("udp", "["+addr.IP.String()+"]:0")
 		if e != nil {
 			return nil, e
 		}
