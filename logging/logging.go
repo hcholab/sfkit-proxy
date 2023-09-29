@@ -8,6 +8,7 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/fatih/color"
@@ -42,6 +43,12 @@ func (h *prettyHandler) Handle(ctx context.Context, r slog.Record) error {
 		fields = append(fields, strings.TrimSpace(kv))
 		return true
 	})
+	if r.Level == slog.LevelError && r.PC != 0 {
+		frames := runtime.CallersFrames([]uintptr{r.PC})
+		frame, _ := frames.Next()
+		source := fmt.Sprintf("source=%s:%d", frame.File, frame.Line)
+		fields = append(fields, source)
+	}
 	fieldStr := strings.Join(fields, " ")
 
 	timeStr := r.Time.Format("[15:05:05.000]")
@@ -70,7 +77,8 @@ func SetupDefault(verbose bool) {
 
 	handler := newPrettyHandler(os.Stdout, prettyHandlerOptions{
 		SlogOpts: slog.HandlerOptions{
-			Level: level,
+			AddSource: true,
+			Level:     level,
 		},
 	})
 
