@@ -10,10 +10,8 @@ import (
 	"log/slog"
 	"net"
 	"net/url"
-	"os"
 
 	"github.com/pion/ice/v3"
-	"github.com/pion/logging"
 	"github.com/pion/stun/v2"
 	"golang.org/x/exp/slices"
 	"golang.org/x/net/websocket"
@@ -126,7 +124,6 @@ func NewService(ctx context.Context, api *url.URL, rawStunURIs []string, studyID
 // TLSConf wraps *tls.Config and net.Addr of remote peer
 type TLSConf struct {
 	*tls.Config
-	LocalAddr  net.Addr
 	RemoteAddr net.Addr
 }
 
@@ -135,7 +132,7 @@ type TLSConf struct {
 // to subscribe to connections established by the protocol.
 //
 // Based on https://github.com/pion/ice/tree/master/examples/ping-pong
-func (s *Service) GetTLSConfigs(ctx context.Context, peerPID mpc.PID, udpConns []net.PacketConn) (_ <-chan *TLSConf, _ io.Closer, err error) {
+func (s *Service) GetTLSConfigs(ctx context.Context, peerPID mpc.PID, udpConn net.PacketConn) (_ <-chan *TLSConf, _ io.Closer, err error) {
 	tlsConfs := make(chan *TLSConf, 1)
 	peerCerts := make(chan *Certificate, 1)
 	conns := make(chan net.Conn, 1)
@@ -146,7 +143,7 @@ func (s *Service) GetTLSConfigs(ctx context.Context, peerPID mpc.PID, udpConns [
 	}
 
 	// initialize the ICE agent
-	a, err := createICEAgent(s.stunURIs, udpConns)
+	a, err := createICEAgent(s.stunURIs, udpConn)
 	if err != nil {
 		return
 	}
@@ -201,22 +198,16 @@ func (s *Service) connectWebSocket(ctx context.Context, api *url.URL, studyID st
 	return
 }
 
-func createICEAgent(stunURIs []*stun.URI, udpConns []net.PacketConn) (a *ice.Agent, err error) {
-	logger := logging.NewDefaultLeveledLoggerForScope("[----ICE-----]", logging.LogLevelWarn, os.Stderr)
-	udpMuxes := make([]ice.UDPMux, 0, len(udpConns))
-	for _, udpConn := range udpConns {
-		udpMuxes = append(udpMuxes, ice.NewUniversalUDPMuxDefault(ice.UniversalUDPMuxParams{
-			UDPConn: udpConn,
-			Logger:  logger,
-		}))
-	}
+func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent, err error) {
 	a, err = ice.NewAgent(&ice.AgentConfig{
 		Urls: stunURIs,
 		NetworkTypes: []ice.NetworkType{
 			ice.NetworkTypeUDP4,
 			ice.NetworkTypeUDP6,
 		},
-		UDPMux: ice.NewMultiUDPMuxDefault(udpMuxes...),
+		UDPMux: ice.NewUniversalUDPMuxDefault(ice.UniversalUDPMuxParams{
+			UDPConn: udpConn,
+		}),
 	})
 	if err == nil {
 		slog.Debug("Created ICE agent")
@@ -306,7 +297,6 @@ func (s *Service) sendLocalCredentials(a *ice.Agent, targetPID mpc.PID) (err err
 }
 
 func (s *Service) handleCerts(ctx context.Context, peerPID mpc.PID, peerCerts <-chan *Certificate, conns <-chan net.Conn, tlsConfs chan<- *TLSConf) error {
-	peerToLocalAddrs := make(map[string]net.Addr)
 	peerToLocalCerts := make(map[string]*tls.Certificate)
 	peerToRemoteCerts := make(map[string]*Certificate)
 
@@ -318,7 +308,6 @@ func (s *Service) handleCerts(ctx context.Context, peerPID mpc.PID, peerCerts <-
 			if peerAddr, localCert, err = s.generateConnCert(conn, peerPID); err != nil {
 				break
 			}
-			peerToLocalAddrs[peerAddr.String()] = conn.LocalAddr()
 			peerToLocalCerts[peerAddr.String()] = &localCert
 			slog.Debug("Added local certificate for", "localAddr", conn.LocalAddr(), "peerAddr", peerAddr)
 
@@ -337,17 +326,16 @@ func (s *Service) handleCerts(ctx context.Context, peerPID mpc.PID, peerCerts <-
 		}
 
 		// Check when both certs have been received
-		localAddr := peerToLocalAddrs[peerAddr.String()]
 		localCert := peerToLocalCerts[peerAddr.String()]
 		peerCert := peerToRemoteCerts[peerAddr.String()]
-		if localAddr == nil || localCert == nil || peerCert == nil {
+		if localCert == nil || peerCert == nil {
 			return
 		}
 		tlsConf, err := getTLSConfig(s.mpc.IsClient(peerPID), localCert, peerCert)
 		if err != nil {
 			return
 		}
-		tlsConfs <- &TLSConf{Config: tlsConf, LocalAddr: localAddr, RemoteAddr: peerAddr}
+		tlsConfs <- &TLSConf{Config: tlsConf, RemoteAddr: peerAddr}
 		slog.Debug("Created TLS config for", "peerAddr", peerAddr)
 		return
 	})()

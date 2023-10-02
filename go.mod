@@ -11,7 +11,6 @@ require (
 	github.com/fatih/color v1.15.0
 	github.com/hcholab/sfgwas v0.0.0-20230721173306-041802b71401
 	github.com/pion/ice/v3 v3.0.1
-	github.com/pion/logging v0.2.2
 	github.com/pion/stun/v2 v2.0.0
 	github.com/quic-go/quic-go v0.38.1
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
@@ -23,6 +22,7 @@ require (
 replace (
 	github.com/armon/go-socks5 => github.com/howmp/go-socks5 v0.0.0-20220913003715-7c30c75ec0a2
 	github.com/ldsec/lattigo/v2 => github.com/hcholab/lattigo/v2 v2.1.2-0.20220628190737-bde274261547
+	github.com/pion/ice/v3 => github.com/hcholab/ice/v3 v3.0.0-20231002171340-e6ed8ff23d5c
 	go.dedis.ch/onet/v3 => github.com/hcholab/onet/v3 v3.0.0-20230828232509-90c2e1097481
 )
 
@@ -53,6 +53,7 @@ require (
 	github.com/montanaflynn/stats v0.7.1 // indirect
 	github.com/onsi/ginkgo/v2 v2.12.0 // indirect
 	github.com/pion/dtls/v2 v2.2.7 // indirect
+	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/mdns v0.0.9 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/transport/v2 v2.2.4 // indirect
