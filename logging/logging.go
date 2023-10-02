@@ -43,16 +43,15 @@ func (h *prettyHandler) Handle(ctx context.Context, r slog.Record) error {
 		fields = append(fields, strings.TrimSpace(kv))
 		return true
 	})
-	if r.Level == slog.LevelError && r.PC != 0 {
-		frames := runtime.CallersFrames([]uintptr{r.PC})
-		frame, _ := frames.Next()
-		source := fmt.Sprintf("source=%s:%d", frame.File, frame.Line)
-		fields = append(fields, source)
-	}
 	fieldStr := strings.Join(fields, " ")
 
 	timeStr := r.Time.Format("[15:05:05.000]")
 	msg := color.CyanString(r.Message)
+	if r.Level == slog.LevelError && r.PC != 0 {
+		frames := runtime.CallersFrames([]uintptr{r.PC})
+		frame, _ := frames.Next()
+		msg = fmt.Sprintf("%s:%d: %s", frame.File, frame.Line, msg)
+	}
 
 	h.l.Println(timeStr, level, msg, color.WhiteString(fieldStr))
 
