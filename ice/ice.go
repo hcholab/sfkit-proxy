@@ -12,9 +12,9 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/pion/ice/v2"
+	"github.com/pion/ice/v3"
 	"github.com/pion/logging"
-	"github.com/pion/stun"
+	"github.com/pion/stun/v2"
 	"golang.org/x/exp/slices"
 	"golang.org/x/net/websocket"
 	"golang.org/x/sync/errgroup"

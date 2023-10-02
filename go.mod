@@ -10,9 +10,9 @@ require (
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/fatih/color v1.15.0
 	github.com/hcholab/sfgwas v0.0.0-20230721173306-041802b71401
-	github.com/pion/ice/v2 v2.3.11
+	github.com/pion/ice/v3 v3.0.1
 	github.com/pion/logging v0.2.2
-	github.com/pion/stun v0.6.1
+	github.com/pion/stun/v2 v2.0.0
 	github.com/quic-go/quic-go v0.38.1
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
 	golang.org/x/net v0.15.0
@@ -56,7 +56,8 @@ require (
 	github.com/pion/mdns v0.0.9 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/transport/v2 v2.2.4 // indirect
-	github.com/pion/turn/v2 v2.1.3 // indirect
+	github.com/pion/transport/v3 v3.0.1 // indirect
+	github.com/pion/turn/v3 v3.0.1 // indirect
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/quic-go/qtls-go1-20 v0.3.4 // indirect
