@@ -199,15 +199,17 @@ func (s *Service) connectWebSocket(ctx context.Context, api *url.URL, studyID st
 }
 
 func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent, err error) {
+	udpMux := ice.NewUniversalUDPMuxDefault(ice.UniversalUDPMuxParams{
+		UDPConn: udpConn,
+	})
 	a, err = ice.NewAgent(&ice.AgentConfig{
 		Urls: stunURIs,
 		NetworkTypes: []ice.NetworkType{
 			ice.NetworkTypeUDP4,
 			ice.NetworkTypeUDP6,
 		},
-		UDPMux: ice.NewUniversalUDPMuxDefault(ice.UniversalUDPMuxParams{
-			UDPConn: udpConn,
-		}),
+		UDPMux:      udpMux,
+		UDPMuxSrflx: udpMux,
 	})
 	if err == nil {
 		slog.Debug("Created ICE agent")
