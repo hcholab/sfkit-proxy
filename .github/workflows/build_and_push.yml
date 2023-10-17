@@ -10,7 +10,7 @@ on:
       - "go.*"
       - "!demo/"
       - "Dockerfile"
-      - ".github/workflows/build_and_publish.yml"
+      - ".github/workflows/build_and_push.yml"
   pull_request:
     branches: [main]
     paths:
@@ -18,7 +18,6 @@ on:
       - "go.*"
       - "!demo/"
       - "Dockerfile"
-      - ".github/workflows/build_and_publish.yml"
 
 # Use multi-platform matrix job optimized for build speed. For more details, see:
 # https://github.com/docker/build-push-action/issues/846
