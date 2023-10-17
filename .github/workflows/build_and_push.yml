@@ -36,7 +36,7 @@ jobs:
         id: repository_owner
         uses: ASzc/change-string-case-action@v5
         with:
-          string: ${{ github.repository_owner
+          string: ${{ github.repository_owner }}
 
       - name: Set outputs
         id: set-outputs
