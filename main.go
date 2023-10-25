@@ -27,6 +27,7 @@ type Args struct {
 	SocksListenURI  *url.URL
 	MPCConfig       *mpc.Config
 	StudyID         string
+	AuthKey         string
 	StunServerURIs  []string
 	Verbose         bool
 }
@@ -45,6 +46,8 @@ func parseArgs() (args Args, err error) {
 	flag.StringVar(&mpcConfigPath, "mpc", mpcConfigPath, "Global MPC config path (.toml file)")
 	flag.StringVar(&args.StudyID, "study", "", "Study ID")
 	flag.IntVar(&mpcPID, "pid", mpcPID, "Numeric party ID")
+
+	flag.StringVar(&args.AuthKey, "auth-key", "", "Auth key, if any")
 
 	flag.BoolVar(&args.Verbose, "v", false, "Verbose output")
 	flag.Parse()
@@ -99,7 +102,7 @@ func run() (exitCode int, err error) {
 	errs, ctx := errgroup.WithContext(ctx)
 	defer cancel()
 
-	iceSvc, err := ice.NewService(ctx, args.SignalServerURI, args.StunServerURIs, args.StudyID, args.MPCConfig, errs)
+	iceSvc, err := ice.NewService(ctx, args.SignalServerURI, args.StunServerURIs, args.AuthKey, args.StudyID, args.MPCConfig, errs)
 	if err != nil {
 		return
 	}

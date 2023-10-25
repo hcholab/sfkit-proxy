@@ -95,7 +95,7 @@ func DefaultSTUNServers() []string {
 	return slices.Clone(defaultSTUNServers)
 }
 
-func NewService(ctx context.Context, api *url.URL, rawStunURIs []string, studyID string, mpcConf *mpc.Config, errs *errgroup.Group) (s *Service, err error) {
+func NewService(ctx context.Context, api *url.URL, rawStunURIs []string, authKey, studyID string, mpcConf *mpc.Config, errs *errgroup.Group) (s *Service, err error) {
 	s = &Service{
 		mpc:     mpcConf,
 		studyID: studyID,
@@ -113,7 +113,7 @@ func NewService(ctx context.Context, api *url.URL, rawStunURIs []string, studyID
 	// and ready to initiate the ICE protocol
 	//
 	// TODO: implement reconnect
-	if err = s.connectWebSocket(ctx, api, studyID); err != nil {
+	if err = s.connectWebSocket(ctx, api, authKey, studyID); err != nil {
 		return
 	}
 
@@ -178,14 +178,14 @@ func (s *Service) GetTLSConfigs(ctx context.Context, peerPID mpc.PID, udpConn ne
 	return tlsConfs, a, a.GatherCandidates()
 }
 
-func (s *Service) connectWebSocket(ctx context.Context, api *url.URL, studyID string) (err error) {
+func (s *Service) connectWebSocket(ctx context.Context, api *url.URL, authKey, studyID string) (err error) {
 	originURL := url.URL{Scheme: api.Scheme, Host: api.Host}
 	wsConfig, err := websocket.NewConfig(api.String(), originURL.String())
 	if err != nil {
 		return
 	}
 
-	auth, err := getAuthHeader(ctx)
+	auth, err := getAuthHeader(ctx, authKey)
 	if err != nil {
 		return
 	}
@@ -458,10 +458,13 @@ func handleRemoteCertificate(cert string, peerCerts chan<- *Certificate) {
 	peerCerts <- &c
 }
 
-func getAuthHeader(ctx context.Context) (header string, err error) {
-	token, err := auth.GetDefaultCredentialToken(ctx)
-	if err != nil {
-		return
+func getAuthHeader(ctx context.Context, authKey string) (header string, err error) {
+	token := authKey
+	if len(token) == 0 {
+		token, err = auth.GetDefaultCredentialToken(ctx)
+		if err != nil {
+			return
+		}
 	}
 	header = "Bearer " + token
 	return
