@@ -2,10 +2,10 @@ import asyncio
 import os
 from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Awaitable, Callable, Dict, List
+from typing import Dict, List
 
 import httpx
-from quart import Quart, abort, copy_current_websocket_context, websocket
+from quart import Quart, Websocket, abort, websocket
 
 PID = int
 
@@ -46,7 +46,7 @@ studies: Dict[str, List[str]] = {}
 
 # in-memory stores for Websockets
 study_barriers: Dict[str, asyncio.Barrier] = {}
-study_parties: Dict[str, Dict[PID, Callable[[Message], Awaitable[None]]]] = {}
+study_parties: Dict[str, Dict[PID, Websocket]] = {}
 
 PORT = os.getenv("PORT", "8000")
 ORIGIN = os.getenv("ORIGIN", f"ws://host.docker.internal:{PORT}")
@@ -109,12 +109,8 @@ async def handler():
         abort(409)
 
     try:
-        # store the current websocket send method for the party
-        @copy_current_websocket_context
-        async def ws_send(msg: Message):
-            await msg.send()
-
-        parties[pid] = ws_send
+        # store the current websocket for the party
+        parties[pid] = websocket._get_current_object() # type: ignore
         print(f"Registered websocket for party {pid}")
 
         # using a study-specific barrier,
@@ -146,8 +142,8 @@ async def handler():
                     ).send()
                     continue
                 else:
-                    target_send = parties[msg.targetPID]
-                    await target_send(msg)
+                    target_ws = parties[msg.targetPID]
+                    await msg.send(target_ws)
     except Exception as e:
         print(f"Terminal connection error for party {pid} in study {study_id}: {e}")
     finally:
