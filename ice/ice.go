@@ -25,6 +25,7 @@ import (
 type Service struct {
 	mpc      *mpc.Config
 	ws       *websocket.Conn
+	msgs     map[mpc.PID]chan Message
 	errs     *errgroup.Group
 	studyID  string
 	stunURIs []*stun.URI
@@ -99,6 +100,7 @@ func NewService(ctx context.Context, api *url.URL, rawStunURIs []string, authKey
 	s = &Service{
 		mpc:     mpcConf,
 		studyID: studyID,
+		msgs:    make(map[mpc.PID]chan Message),
 		errs:    errs,
 	}
 
@@ -116,6 +118,12 @@ func NewService(ctx context.Context, api *url.URL, rawStunURIs []string, authKey
 	if err = s.connectWebSocket(ctx, api, authKey); err != nil {
 		return
 	}
+
+	// listen to WebSocket messages and
+	// forward them to the corresponding channel
+	s.errs.Go(util.Retry(ctx, func() error {
+		return s.receiveMessage(ctx)
+	}))
 
 	slog.Debug("Started ICE service")
 	return
@@ -150,7 +158,7 @@ func (s *Service) GetTLSConfigs(ctx context.Context, peerPID mpc.PID, udpConn ne
 
 	// start listening for ICE signaling messages
 	s.errs.Go(util.Retry(ctx, func() error {
-		return s.handleSignals(ctx, a, conns, peerCerts)
+		return s.handleSignals(ctx, a, peerPID, conns, peerCerts)
 	}))
 
 	// generate TLS certificates and exhange them with peers
@@ -195,6 +203,34 @@ func (s *Service) connectWebSocket(ctx context.Context, api *url.URL, authKey st
 
 	slog.Info("Waiting for all parties to connect")
 	s.ws, err = websocket.DialConfig(wsConfig)
+
+	for _, peerPID := range s.mpc.PeerPIDs {
+		s.msgs[peerPID] = make(chan Message)
+	}
+	return
+}
+
+func (s *Service) receiveMessage(ctx context.Context) (err error) {
+	var msg Message
+	if err = websocket.JSON.Receive(s.ws, &msg); err != nil {
+		if err == io.EOF {
+			return
+		} else if errors.Is(err, net.ErrClosed) {
+			return util.Permanent(err)
+		}
+		slog.Error("Receiving signaling message", "err", err)
+		err = nil // TODO: do not ignore ?
+		return
+	}
+
+	if msg.Type == MessageTypeError {
+		slog.Error("Signaling error: " + msg.Data)
+	} else if msg.TargetPID < 0 {
+		slog.Error("Received message without a targetPID", "msg", msg)
+	} else {
+		slog.Debug("Received signaling message:", "msg", msg)
+		s.msgs[msg.SourcePID] <- msg
+	}
 	return
 }
 
@@ -380,21 +416,8 @@ func (s *Service) generateConnCert(conn net.Conn, peerPID mpc.PID) (peerAddr net
 
 type ConnOp func(context.Context, string, string) (net.Conn, error)
 
-func (s *Service) handleSignals(ctx context.Context, a *ice.Agent, conns chan<- net.Conn, peerCerts chan<- *Certificate) (err error) {
-	var msg Message
-	if err = websocket.JSON.Receive(s.ws, &msg); err != nil {
-		if err == io.EOF {
-			return
-		} else if errors.Is(err, net.ErrClosed) {
-			return util.Permanent(err)
-		}
-		slog.Error("Receiving signaling message", "err", err)
-		err = nil // TODO: do not ignore ?
-		return
-	}
-	slog.Debug("Received signaling message:", "msg", msg)
-
-	switch t := msg.Type; t {
+func (s *Service) handleSignals(ctx context.Context, a *ice.Agent, peerPID mpc.PID, conns chan<- net.Conn, peerCerts chan<- *Certificate) (err error) {
+	switch msg := <-s.msgs[peerPID]; msg.Type {
 	case MessageTypeCandidate:
 		handleRemoteCandidate(a, msg.Data)
 	case MessageTypeCredential:
@@ -404,7 +427,7 @@ func (s *Service) handleSignals(ctx context.Context, a *ice.Agent, conns chan<- 
 	case MessageTypeError:
 		slog.Error("Signaling error: " + msg.Data)
 	default:
-		slog.Error("Unknown", "msg.Type", t, "msg", msg)
+		slog.Error("Unknown", "msg.Type", msg.Type, "msg", msg)
 	}
 	return
 }
