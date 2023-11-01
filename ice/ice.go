@@ -164,7 +164,7 @@ func (s *Service) GetTLSConfigs(ctx context.Context, peerPID mpc.PID, udpConn ne
 	}
 
 	// handle ICE connection state changes
-	if err = setupConnectionStateHandler(a); err != nil {
+	if err = setupConnectionStateHandler(a, peerPID); err != nil {
 		return
 	}
 
@@ -254,10 +254,10 @@ func (s *Service) setupNewCandidateHandler(a *ice.Agent, targetPID mpc.PID) (err
 	return
 }
 
-func setupConnectionStateHandler(a *ice.Agent) (err error) {
+func setupConnectionStateHandler(a *ice.Agent, peerPID mpc.PID) (err error) {
 	// TODO: handle properly
 	if err = a.OnConnectionStateChange(func(c ice.ConnectionState) {
-		slog.Debug("ICE Connection State has changed", "state", c)
+		slog.Debug("ICE Connection State has changed", "state", c, "peerPID", peerPID)
 	}); err != nil {
 		return
 	}
