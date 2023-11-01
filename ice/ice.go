@@ -113,7 +113,7 @@ func NewService(ctx context.Context, api *url.URL, rawStunURIs []string, authKey
 	// and ready to initiate the ICE protocol
 	//
 	// TODO: implement reconnect
-	if err = s.connectWebSocket(ctx, api, authKey, studyID); err != nil {
+	if err = s.connectWebSocket(ctx, api, authKey); err != nil {
 		return
 	}
 
@@ -178,7 +178,7 @@ func (s *Service) GetTLSConfigs(ctx context.Context, peerPID mpc.PID, udpConn ne
 	return tlsConfs, a, a.GatherCandidates()
 }
 
-func (s *Service) connectWebSocket(ctx context.Context, api *url.URL, authKey, studyID string) (err error) {
+func (s *Service) connectWebSocket(ctx context.Context, api *url.URL, authKey string) (err error) {
 	originURL := url.URL{Scheme: api.Scheme, Host: api.Host}
 	wsConfig, err := websocket.NewConfig(api.String(), originURL.String())
 	if err != nil {
@@ -191,7 +191,7 @@ func (s *Service) connectWebSocket(ctx context.Context, api *url.URL, authKey, s
 	}
 	h := wsConfig.Header
 	h.Add(authHeader, auth)
-	h.Add(studyIDHeader, studyID)
+	h.Add(studyIDHeader, s.studyID)
 
 	slog.Info("Waiting for all parties to connect")
 	s.ws, err = websocket.DialConfig(wsConfig)
