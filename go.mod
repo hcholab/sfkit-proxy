@@ -22,6 +22,7 @@ require (
 replace (
 	github.com/armon/go-socks5 => github.com/howmp/go-socks5 v0.0.0-20220913003715-7c30c75ec0a2
 	github.com/ldsec/lattigo/v2 => github.com/hcholab/lattigo/v2 v2.1.2-0.20220628190737-bde274261547
+	github.com/pion/ice/v3 => github.com/hcholab/ice/v3 v3.0.0-20231002171340-e6ed8ff23d5c
 	go.dedis.ch/onet/v3 => github.com/hcholab/onet/v3 v3.0.0-20230828232509-90c2e1097481
 )
 
