@@ -271,7 +271,7 @@ func (s *Service) setupNewCandidateHandler(a *ice.Agent, targetPID mpc.PID) (err
 		if c == nil {
 			return
 		}
-		slog.Debug("Gathered ICE candidate:", "candidate", c)
+		slog.Debug("Gathered ICE candidate:", "peerPID", targetPID, "candidate", c)
 
 		msg := Message{
 			// IDs are not authoritative, but useful for debugging
@@ -305,7 +305,7 @@ func setupConnectionStateHandler(a *ice.Agent, peerPID mpc.PID) (err error) {
 }
 
 func (s *Service) sendLocalCredentials(a *ice.Agent, targetPID mpc.PID) (err error) {
-	slog.Debug("Waiting for local ICE credentials", "targetPID", targetPID)
+	slog.Debug("Waiting for local ICE credentials", "peerPID", targetPID)
 	localUfrag, localPwd, err := a.GetLocalUserCredentials()
 	if err != nil {
 		err = fmt.Errorf("getting local ICE credentials: %s", err.Error())
