@@ -110,7 +110,7 @@ async def handler():
 
     try:
         # store the current websocket for the party
-        parties[pid] = websocket._get_current_object() # type: ignore
+        parties[pid] = websocket._get_current_object()  # type: ignore
         print(f"Registered websocket for party {pid}")
 
         # using a study-specific barrier,
@@ -131,8 +131,7 @@ async def handler():
                 # and send it to the other party
                 if msg.targetPID < 0:
                     await Message(
-                        MessageType.ERROR,
-                        f"Missing target PID: {msg}"
+                        MessageType.ERROR, f"Missing target PID: {msg}"
                     ).send()
                     continue
                 elif msg.targetPID not in parties or msg.targetPID == pid:
@@ -180,7 +179,9 @@ async def _get_subject_id():
                 f"Unable to fetch subject ID from Google: {res.status_code} {body}",
             ).send()
         else:
-            return str(res.json()["sub"])
+            body = res.json()
+            sub = body.get("sub", body.get("azp", ""))
+            return str(sub)
 
 
 def _get_study(study_id: str):
