@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/url"
+	"strings"
 
 	"github.com/pion/ice/v3"
 	"github.com/pion/stun/v2"
@@ -163,7 +164,7 @@ func (s *Service) GetTLSConfigs(ctx context.Context, peerPID mpc.PID, udpConn ne
 
 	// generate TLS certificates and exhange them with peers
 	s.errs.Go(util.Retry(ctx, func() error {
-		return s.handleCerts(ctx, peerPID, peerCerts, conns, tlsConfs)
+		return s.handleCerts(ctx, a, peerPID, peerCerts, conns, tlsConfs)
 	}))
 
 	// when we have gathered a new ICE Candidate, send it to the remote peer(s)
@@ -335,7 +336,29 @@ func (s *Service) sendLocalCredentials(a *ice.Agent, targetPID mpc.PID) (err err
 	return
 }
 
-func (s *Service) handleCerts(ctx context.Context, peerPID mpc.PID, peerCerts <-chan *Certificate, conns <-chan net.Conn, tlsConfs chan<- *TLSConf) error {
+func getLocalCandidateIPAddrs(a *ice.Agent) (ips []net.IP, addrs []string, err error) {
+	candidates, err := a.GetLocalCandidates()
+	if err != nil {
+		return
+	}
+	mAddrs := map[string]bool{}
+	for _, c := range candidates {
+		addr := fmt.Sprintf("%s:%d", c.Address(), c.Port())
+		mAddrs[addr] = true
+		if rel := c.RelatedAddress(); rel != nil {
+			addr = fmt.Sprintf("%s:%d", rel.Address, rel.Port)
+			mAddrs[addr] = true
+		}
+	}
+	for addr := range mAddrs {
+		ip := net.ParseIP(strings.SplitN(addr, ":", 2)[0])
+		ips = append(ips, ip)
+		addrs = append(addrs, addr)
+	}
+	return
+}
+
+func (s *Service) handleCerts(ctx context.Context, a *ice.Agent, peerPID mpc.PID, peerCerts <-chan *Certificate, conns <-chan net.Conn, tlsConfs chan<- *TLSConf) error {
 	peerToLocalCerts := make(map[string]*tls.Certificate)
 	peerToRemoteCerts := make(map[string]*Certificate)
 
@@ -344,7 +367,7 @@ func (s *Service) handleCerts(ctx context.Context, peerPID mpc.PID, peerCerts <-
 		select {
 		case conn := <-conns:
 			var localCert tls.Certificate
-			if peerAddr, localCert, err = s.generateConnCert(conn, peerPID); err != nil {
+			if peerAddr, localCert, err = s.generateConnCert(a, conn, peerPID); err != nil {
 				break
 			}
 			peerToLocalCerts[peerAddr.String()] = &localCert
@@ -380,39 +403,41 @@ func (s *Service) handleCerts(ctx context.Context, peerPID mpc.PID, peerCerts <-
 	})()
 }
 
-func (s *Service) generateConnCert(conn net.Conn, peerPID mpc.PID) (peerAddr net.Addr, localCert tls.Certificate, err error) {
+func (s *Service) generateConnCert(a *ice.Agent, conn net.Conn, peerPID mpc.PID) (peerAddr net.Addr, localCert tls.Certificate, err error) {
 	peerAddr = conn.RemoteAddr()
-	localAddr, ok := conn.LocalAddr().(*net.UDPAddr)
-	if !ok {
-		err = fmt.Errorf("cannot convert %s to UDPAddr: %s", conn.LocalAddr(), err)
+	localIPs, localAddrs, err := getLocalCandidateIPAddrs(a)
+	if err != nil {
 		return
 	}
 
 	var certPEM string
-	if localCert, certPEM, err = generateTLSCert(localAddr.IP); err != nil {
+	if localCert, certPEM, err = generateTLSCert(localIPs...); err != nil {
 		return
 	}
-	slog.Debug("Generated local certificate for", "localAddr", localAddr, "peerPID", peerPID)
+	slog.Debug("Generated local certificate for", "localAddrs", localAddrs, "peerPID", peerPID)
 
-	cert, err := json.Marshal(Certificate{
-		Addr: localAddr.String(),
-		PEM:  certPEM,
-	})
-	if err != nil {
-		err = fmt.Errorf("serializing certificate with addr=%s PEM=%s: %s", localAddr, certPEM, err)
-		return
-	}
+	for _, localAddr := range localAddrs {
+		var cert []byte
+		cert, err = json.Marshal(Certificate{
+			Addr: localAddr,
+			PEM:  certPEM,
+		})
+		if err != nil {
+			err = fmt.Errorf("serializing certificate with addr=%s PEM=%s: %s", localAddr, certPEM, err)
+			return
+		}
 
-	msg := Message{
-		// IDs are not authoritative, but useful for debugging
-		SourcePID: s.mpc.LocalPID,
-		StudyID:   s.studyID,
-		TargetPID: peerPID,
-		Type:      MessageTypeCertificate,
-		Data:      string(cert),
-	}
-	if err = websocket.JSON.Send(s.ws, msg); err == nil {
-		slog.Debug("Sent local certificate for", "localAddr", localAddr, "peerAddr", peerAddr, "peerPID", peerPID)
+		msg := Message{
+			// IDs are not authoritative, but useful for debugging
+			SourcePID: s.mpc.LocalPID,
+			StudyID:   s.studyID,
+			TargetPID: peerPID,
+			Type:      MessageTypeCertificate,
+			Data:      string(cert),
+		}
+		if err = websocket.JSON.Send(s.ws, msg); err == nil {
+			slog.Debug("Sent local certificate for", "localAddr", localAddr, "peerAddr", peerAddr, "peerPID", peerPID)
+		}
 	}
 	return
 }

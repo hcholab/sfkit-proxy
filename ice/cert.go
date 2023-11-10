@@ -20,10 +20,10 @@ const (
 
 // Setup a bare-bones TLS cert for mTLS with a peer
 // https://github.com/quic-go/quic-go/blob/master/example/echo/echo.go
-func generateTLSCert(ipAddr net.IP) (tlsCert tls.Certificate, pemCert string, err error) {
+func generateTLSCert(ipAddrs ...net.IP) (tlsCert tls.Certificate, pemCert string, err error) {
 	template := x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		IPAddresses:  []net.IP{ipAddr},
+		IPAddresses:  ipAddrs,
 		NotAfter:     time.Now().Add(CertValidity),
 	}
 	key, err := rsa.GenerateKey(rand.Reader, CertKeyLength)
