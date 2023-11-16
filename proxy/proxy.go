@@ -29,7 +29,7 @@ type Service struct {
 	errs *errgroup.Group
 }
 
-func NewService(ctx context.Context, listenURI *url.URL, mpcConf *mpc.Config, rcg remoteConnsGetter, errs *errgroup.Group) (s *Service, err error) {
+func NewService(ctx context.Context, wsReady <-chan any, listenURI *url.URL, mpcConf *mpc.Config, rcg remoteConnsGetter, errs *errgroup.Group) (s *Service, err error) {
 	slog.Debug("Starting SOCKS service")
 
 	s = &Service{
@@ -40,13 +40,18 @@ func NewService(ctx context.Context, listenURI *url.URL, mpcConf *mpc.Config, rc
 	}
 	slog.Debug("MPC:", "config", mpcConf)
 
+	// channel to signal when SOCKS dialer can start proxying
+	dialReady := make(chan any)
+
 	if len(mpcConf.ServerPIDs) > 0 {
 		// set up SOCKS5 listener that accepts
 		// connections from local proxy clients
-		if err = s.createSocksListener(ctx, listenURI); err != nil {
+		if err = s.createSocksListener(ctx, dialReady, listenURI); err != nil {
 			return
 		}
 	}
+
+	<-wsReady
 
 	// create a connection channel for each remote (server or client) peer
 	if err = s.initRemoteConns(ctx); err != nil {
@@ -57,6 +62,9 @@ func NewService(ctx context.Context, listenURI *url.URL, mpcConf *mpc.Config, rc
 	// connections from remote clients to
 	s.initLocalConns(ctx)
 
+	// signal dial readiness
+	close(dialReady)
+
 	slog.Debug("Started proxy service")
 	return
 }
@@ -66,9 +74,9 @@ func (s *Service) Stop() (err error) {
 	return s.l.Close()
 }
 
-func (s *Service) createSocksListener(ctx context.Context, listenURI *url.URL) (err error) {
+func (s *Service) createSocksListener(ctx context.Context, dialReady <-chan any, listenURI *url.URL) (err error) {
 	server, err := socks5.New(&socks5.Config{
-		Dial: s.dialRemote,
+		Dial: s.dialRemote(dialReady),
 	})
 	if err != nil {
 		return
@@ -91,24 +99,37 @@ func toURL(addr net.Addr) *url.URL {
 	}
 }
 
-func (s *Service) dialRemote(ctx context.Context, network, addr string) (conn net.Conn, err error) {
-	slog.Debug("SOCKS dial:", "network", network, "addr", addr)
-	addrPort, err := netip.ParseAddrPort(addr)
-	if err != nil {
-		return
-	}
-	serverPID, ok := s.mpc.ServerPIDs[addrPort]
-	if !ok {
-		err = fmt.Errorf("no PID found for address: %s", addr)
-		return
-	}
-	conn = <-s.remoteConns[serverPID]
-	slog.Debug("SOCKS dial:", "PID", serverPID)
+type DialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 
-	// Send remote port in big-endian format to the remote peer
-	bPort := []byte{byte(addrPort.Port() >> 8), byte(addrPort.Port())}
-	_, err = conn.Write(bPort)
-	return
+func (s *Service) dialRemote(ready <-chan any) DialFunc {
+	return func(_ context.Context, network, addr string) (conn net.Conn, err error) {
+		slog.Debug("SOCKS dial:", "network", network, "addr", addr)
+		addrPort, err := netip.ParseAddrPort(addr)
+		if err != nil {
+			return
+		}
+		serverPID, ok := s.mpc.ServerPIDs[addrPort]
+		if !ok {
+			err = fmt.Errorf("no PID found for address: %s", addr)
+			return
+		}
+
+		slog.Debug("SOCKS dial: waiting for remote connections")
+		<-ready
+
+		conns, ok := s.remoteConns[serverPID]
+		if !ok {
+			err = fmt.Errorf("cannot find remote connectionection channel for PID %d", serverPID)
+			return
+		}
+		conn = <-conns
+		slog.Debug("SOCKS dial: sending server", "PID", serverPID, "port", addrPort.Port())
+
+		// Send remote port in big-endian format to the remote peer
+		bPort := []byte{byte(addrPort.Port() >> 8), byte(addrPort.Port())}
+		_, err = conn.Write(bPort)
+		return
+	}
 }
 
 type pidConn struct {

@@ -102,7 +102,11 @@ func run() (exitCode int, err error) {
 	errs, ctx := errgroup.WithContext(ctx)
 	defer cancel()
 
-	iceSvc, err := ice.NewService(ctx, args.SignalServerURI, args.StunServerURIs, args.AuthKey, args.StudyID, args.MPCConfig, errs)
+	// channel to signal when all clients are connected over WebSocket,
+	// before initiating proxy communication
+	wsReady := make(chan any)
+
+	iceSvc, err := ice.NewService(ctx, wsReady, args.SignalServerURI, args.StunServerURIs, args.AuthKey, args.StudyID, args.MPCConfig, errs)
 	if err != nil {
 		return
 	}
@@ -114,7 +118,7 @@ func run() (exitCode int, err error) {
 	}
 	defer util.Cleanup(&err, quicSvc.Stop)
 
-	proxySvc, err := proxy.NewService(ctx, args.SocksListenURI, args.MPCConfig, quicSvc.GetConns, errs)
+	proxySvc, err := proxy.NewService(ctx, wsReady, args.SocksListenURI, args.MPCConfig, quicSvc.GetConns, errs)
 	if err != nil {
 		return
 	}

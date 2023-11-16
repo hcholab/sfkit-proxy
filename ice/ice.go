@@ -97,7 +97,7 @@ func DefaultSTUNServers() []string {
 	return slices.Clone(defaultSTUNServers)
 }
 
-func NewService(ctx context.Context, api *url.URL, rawStunURIs []string, authKey, studyID string, mpcConf *mpc.Config, errs *errgroup.Group) (s *Service, err error) {
+func NewService(ctx context.Context, wsReady chan<- any, api *url.URL, rawStunURIs []string, authKey, studyID string, mpcConf *mpc.Config, errs *errgroup.Group) (s *Service, err error) {
 	s = &Service{
 		mpc:     mpcConf,
 		studyID: studyID,
@@ -111,20 +111,24 @@ func NewService(ctx context.Context, api *url.URL, rawStunURIs []string, authKey
 		return
 	}
 
-	// connect to the signaling API via WebSocket
-	// and return once all clients are connected
-	// and ready to initiate the ICE protocol
-	//
-	// TODO: implement reconnect
-	if err = s.connectWebSocket(ctx, api, authKey); err != nil {
-		return
-	}
+	errs.Go(func() (err error) {
+		// connect to the signaling API via WebSocket
+		// and signal the readiness channel
+		// once all clients are connected
+		// and ready to initiate the ICE protocol
+		//
+		// TODO: implement reconnect?
+		if err = s.connectWebSocket(ctx, api, authKey); err != nil {
+			return
+		}
+		close(wsReady)
 
-	// listen to WebSocket messages and
-	// forward them to the corresponding channel
-	s.errs.Go(util.Retry(ctx, func() error {
-		return s.receiveMessage(ctx)
-	}))
+		// listen to WebSocket messages and
+		// forward them to the corresponding channel
+		return util.Retry(ctx, func() error {
+			return s.receiveMessage(ctx)
+		})()
+	})
 
 	slog.Debug("Started ICE service")
 	return
