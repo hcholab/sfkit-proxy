@@ -71,7 +71,10 @@ func NewService(ctx context.Context, wsReady <-chan any, listenURI *url.URL, mpc
 
 func (s *Service) Stop() (err error) {
 	slog.Warn("Stopping proxy service")
-	return s.l.Close()
+	if s.l != nil {
+		err = s.l.Close()
+	}
+	return
 }
 
 func (s *Service) createSocksListener(ctx context.Context, dialReady <-chan any, listenURI *url.URL) (err error) {
