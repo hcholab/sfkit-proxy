@@ -522,14 +522,14 @@ func handleRemoteCertificate(cert string, peerCerts chan<- *Certificate) {
 }
 
 func getAuthHeader(ctx context.Context, authKey string) (header string, err error) {
-	token := authKey
-	if len(token) == 0 {
-		token, err = auth.GetDefaultCredentialToken(ctx)
+	header = authKey
+	if len(header) == 0 {
+		header, err = auth.GetDefaultCredentialToken(ctx)
 		if err != nil {
 			return
 		}
+		header = "Bearer " + header
 	}
-	header = "Bearer " + token
 	return
 }
 
