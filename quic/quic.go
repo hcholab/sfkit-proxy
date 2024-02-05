@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/hcholab/sfkit-proxy/ice"
 	"github.com/hcholab/sfkit-proxy/mpc"
@@ -21,13 +20,13 @@ type tlsConfsGetter func(context.Context, mpc.PID, net.PacketConn) (<-chan *ice.
 type Service struct {
 	mpc         *mpc.Config
 	qConf       *quic.Config
-	errs        *errgroup.Group
+	errs        chan<- error
 	getTLSConfs tlsConfsGetter
 }
 
 const retryMs = 1000
 
-func NewService(mpcConf *mpc.Config, tcg tlsConfsGetter, errs *errgroup.Group) (s *Service, err error) {
+func NewService(mpcConf *mpc.Config, tcg tlsConfsGetter, errs chan<- error) (s *Service, err error) {
 	qc := &quic.Config{
 		KeepAlivePeriod: 15 * time.Second,
 	}
@@ -55,7 +54,7 @@ func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan net.C
 	}
 
 	conns := make(chan net.Conn, s.mpc.Threads)
-	s.errs.Go(func() (err error) {
+	util.Go(ctx, s.errs, func() (err error) {
 		defer util.Cleanup(&err, tr.Close)
 		defer util.Cleanup(&err, c.Close)
 

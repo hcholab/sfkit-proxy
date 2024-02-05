@@ -16,7 +16,6 @@ import (
 	"github.com/pion/stun/v2"
 	"golang.org/x/exp/slices"
 	"golang.org/x/net/websocket"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/hcholab/sfkit-proxy/auth"
 	"github.com/hcholab/sfkit-proxy/mpc"
@@ -27,7 +26,7 @@ type Service struct {
 	mpc      *mpc.Config
 	ws       *websocket.Conn
 	msgs     map[mpc.PID]chan Message
-	errs     *errgroup.Group
+	errs     chan<- error
 	studyID  string
 	stunURIs []*stun.URI
 }
@@ -97,7 +96,7 @@ func DefaultSTUNServers() []string {
 	return slices.Clone(defaultSTUNServers)
 }
 
-func NewService(ctx context.Context, wsReady chan<- any, api *url.URL, rawStunURIs []string, authKey, studyID string, mpcConf *mpc.Config, errs *errgroup.Group) (s *Service, err error) {
+func NewService(ctx context.Context, wsReady chan<- any, api *url.URL, rawStunURIs []string, authKey, studyID string, mpcConf *mpc.Config, errs chan<- error) (s *Service, err error) {
 	s = &Service{
 		mpc:     mpcConf,
 		studyID: studyID,
@@ -111,7 +110,7 @@ func NewService(ctx context.Context, wsReady chan<- any, api *url.URL, rawStunUR
 		return
 	}
 
-	errs.Go(func() (err error) {
+	util.Go(ctx, errs, func() (err error) {
 		// connect to the signaling API via WebSocket
 		// and signal the readiness channel
 		// once all clients are connected
@@ -162,12 +161,12 @@ func (s *Service) GetTLSConfigs(ctx context.Context, peerPID mpc.PID, udpConn ne
 	}
 
 	// start listening for ICE signaling messages
-	s.errs.Go(util.Retry(ctx, func() error {
+	util.Go(ctx, s.errs, util.Retry(ctx, func() error {
 		return s.handleSignals(ctx, a, peerPID, conns, peerCerts)
 	}))
 
 	// generate TLS certificates and exhange them with peers
-	s.errs.Go(util.Retry(ctx, func() error {
+	util.Go(ctx, s.errs, util.Retry(ctx, func() error {
 		return s.handleCerts(ctx, a, peerPID, peerCerts, conns, tlsConfs)
 	}))
 
@@ -207,7 +206,9 @@ func (s *Service) connectWebSocket(ctx context.Context, api *url.URL, authKey st
 	h.Add(studyIDHeader, s.studyID)
 
 	slog.Info("Waiting for all parties to connect")
-	s.ws, err = websocket.DialConfig(wsConfig)
+	if s.ws, err = websocket.DialConfig(wsConfig); err != nil {
+		return
+	}
 
 	for _, peerPID := range s.mpc.PeerPIDs {
 		s.msgs[peerPID] = make(chan Message)
@@ -534,5 +535,8 @@ func getAuthHeader(ctx context.Context, authKey string) (header string, err erro
 
 func (s *Service) Stop() (err error) {
 	slog.Warn("Stopping ICE service")
-	return s.ws.Close()
+	if s.ws != nil {
+		err = s.ws.Close()
+	}
+	return
 }
