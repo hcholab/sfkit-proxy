@@ -135,9 +135,9 @@ func run() (exitCode int, err error) {
 	exitCh := handleSignals(ctx)
 	select {
 	case exitCode = <-exitCh:
-		slog.Debug("Exit from a signal")
+		slog.Error("Exit from a signal", "code", exitCode)
 	case err = <-errs:
-		slog.Debug("Abnormal exit from a service")
+		slog.Error("Abnormal exit from a service", "err", err)
 	}
 	return
 }
