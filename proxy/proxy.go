@@ -11,7 +11,6 @@ import (
 	"net/url"
 
 	"github.com/armon/go-socks5"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/hcholab/sfkit-proxy/mpc"
 	"github.com/hcholab/sfkit-proxy/util"
@@ -26,10 +25,10 @@ type Service struct {
 	remoteConns    map[mpc.PID]<-chan net.Conn
 	getRemoteConns remoteConnsGetter
 
-	errs *errgroup.Group
+	errs chan<- error
 }
 
-func NewService(ctx context.Context, wsReady <-chan any, listenURI *url.URL, mpcConf *mpc.Config, rcg remoteConnsGetter, errs *errgroup.Group) (s *Service, err error) {
+func NewService(ctx context.Context, wsReady <-chan any, listenURI *url.URL, mpcConf *mpc.Config, rcg remoteConnsGetter, errs chan<- error) (s *Service, err error) {
 	slog.Debug("Starting SOCKS service")
 
 	s = &Service{
@@ -88,7 +87,7 @@ func (s *Service) createSocksListener(ctx context.Context, dialReady <-chan any,
 	if s.l, err = lc.Listen(ctx, listenURI.Scheme, listenURI.Host); err != nil {
 		return
 	}
-	s.errs.Go(util.Retry(ctx, func() error {
+	util.Go(ctx, s.errs, util.Retry(ctx, func() error {
 		return server.Serve(s.l)
 	}))
 	slog.Debug("SOCKS proxy is listening on:", "addr", toURL(s.l.Addr()))
@@ -153,7 +152,7 @@ func (s *Service) initRemoteConns(ctx context.Context) (err error) {
 	for _, pid := range s.mpc.PeerPIDs {
 		remotePID := pid
 
-		s.errs.Go(func() (err error) {
+		util.Go(ctx, s.errs, func() (err error) {
 			conns, err := s.getRemoteConns(ctx, remotePID)
 			if err == nil {
 				pidConns <- &pidConn{conns, remotePID}
@@ -195,7 +194,7 @@ func (s *Service) handleClientConns(ctx context.Context, localAddrs []netip.Addr
 	for {
 		select {
 		case remoteConn := <-remoteConns:
-			s.errs.Go(func() error {
+			util.Go(ctx, s.errs, func() error {
 				return s.proxyRemoteClient(ctx, remoteConn, localAddrs)
 			})
 		case <-ctx.Done():
@@ -217,10 +216,10 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 		}
 		defer util.Cleanup(&err, localConn.Close)
 
-		errs, ectx := errgroup.WithContext(ctx)
+		errs := make(chan error, 1)
 
 		// proxy requests: local server <- remote client
-		errs.Go(util.Retry(ectx, func() (err error) {
+		util.Go(ctx, errs, util.Retry(ctx, func() (err error) {
 			if _, err = io.Copy(localConn, remoteConn); err == io.EOF {
 				return localEOF
 			} else if err == nil {
@@ -230,7 +229,7 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 		}))
 
 		// proxy responses: local server -> remote client
-		errs.Go(util.Retry(ectx, func() (err error) {
+		util.Go(ctx, errs, util.Retry(ctx, func() (err error) {
 			if _, err = io.Copy(remoteConn, localConn); err == nil {
 				// err == nil means local connection was closed,
 				// so we should exit and retry after recreating it
@@ -242,7 +241,7 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 			return
 		}))
 
-		if err = errs.Wait(); err == localEOF {
+		if err = <-errs; err == localEOF {
 			err = nil
 			return // retry
 		}

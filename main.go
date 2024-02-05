@@ -11,8 +11,6 @@ import (
 	"strings"
 	"syscall"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/hcholab/sfkit-proxy/ice"
 	"github.com/hcholab/sfkit-proxy/logging"
 	"github.com/hcholab/sfkit-proxy/mpc"
@@ -99,7 +97,7 @@ func run() (exitCode int, err error) {
 	logging.SetupDefault(args.Verbose)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	errs, ctx := errgroup.WithContext(ctx)
+	errs := make(chan error, 1)
 	defer cancel()
 
 	// channel to signal when all clients are connected over WebSocket,
@@ -118,22 +116,27 @@ func run() (exitCode int, err error) {
 	}
 	defer util.Cleanup(&err, quicSvc.Stop)
 
-	proxySvc, err := proxy.NewService(ctx, wsReady, args.SocksListenURI, args.MPCConfig, quicSvc.GetConns, errs)
-	if err != nil {
+	proxySvcCh := make(chan *proxy.Service, 1)
+	util.Go(ctx, errs, func() (err error) {
+		proxySvc, err := proxy.NewService(ctx, wsReady, args.SocksListenURI, args.MPCConfig, quicSvc.GetConns, errs)
+		if err == nil {
+			proxySvcCh <- proxySvc
+		}
 		return
-	}
-	defer util.Cleanup(&err, proxySvc.Stop)
+	})
+	defer util.Cleanup(&err, func() (err error) {
+		if len(proxySvcCh) > 0 {
+			err = (<-proxySvcCh).Stop()
+		}
+		return
+	})
 
 	// Wait for exit
 	exitCh := handleSignals(ctx)
-	doneCh := make(chan error)
-	go func() {
-		doneCh <- errs.Wait()
-	}()
 	select {
 	case exitCode = <-exitCh:
 		slog.Debug("Exit from a signal")
-	case err = <-doneCh:
+	case err = <-errs:
 		slog.Debug("Abnormal exit from a service")
 	}
 	return

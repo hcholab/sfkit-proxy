@@ -8,6 +8,15 @@ import (
 	"github.com/cenkalti/backoff/v4"
 )
 
+func Go(ctx context.Context, errs chan<- error, op func() error) {
+	go func() {
+		select {
+		case <-ctx.Done():
+		case errs <- op():
+		}
+	}()
+}
+
 // Retry retries a given operation until the operation
 // returns a PermanentError, or the context is canceled.
 func Retry(ctx context.Context, op backoff.Operation) func() error {
