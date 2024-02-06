@@ -133,13 +133,18 @@ func run() (exitCode int, err error) {
 
 	// Wait for exit
 	exitCh := handleSignals(ctx)
-	select {
-	case exitCode = <-exitCh:
-		slog.Error("Exit from a signal", "code", exitCode)
-	case err = <-errs:
-		slog.Error("Abnormal exit from a service", "err", err)
+	for {
+		select {
+		case exitCode = <-exitCh:
+			slog.Error("Exit from a signal", "code", exitCode)
+			return
+		case err = <-errs:
+			if err != nil {
+				slog.Error("Abnormal exit from a service", "err", err)
+				return
+			}
+		}
 	}
-	return
 }
 
 func handleSignals(ctx context.Context) <-chan int {
