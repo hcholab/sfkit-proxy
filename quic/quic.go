@@ -70,7 +70,7 @@ func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan net.C
 						return s.handleServer(ctx, tr, tc.Config, peerPID, conns)
 					}
 				})(); err != nil {
-					slog.Error(err.Error())
+					slog.Error("quic.GetConns():", "peerPID", peerPID, "err", err.Error())
 					return
 				}
 			case <-ctx.Done():
@@ -79,7 +79,7 @@ func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan net.C
 			return
 		})()
 		if err != nil {
-			slog.Error("quic.GetConns", "err", err)
+			slog.Error("quic.GetConns():", "err", err)
 		}
 		return
 	})
@@ -94,7 +94,7 @@ func (s *Service) Stop() error {
 func (s *Service) handleClient(ctx context.Context, tr *quic.Transport, tlsConf *tls.Config, pid mpc.PID, addr net.Addr, conns chan<- net.Conn) (err error) {
 	var c quic.Connection
 	if c, err = tr.Dial(ctx, addr, tlsConf, s.qConf); err != nil {
-		slog.Error("Dial:", "addr", addr.String(), "err", err.Error())
+		slog.Error("QUIC dial:", "addr", addr.String(), "err", err.Error())
 		return // give up to retry
 	}
 	slog.Info("Started QUIC client:", "peer", pid, "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr())
@@ -128,6 +128,10 @@ type Conn struct {
 
 func (s *Service) handleServer(ctx context.Context, tr *quic.Transport, tlsConf *tls.Config, pid mpc.PID, conns chan<- net.Conn) (err error) {
 	l, err := tr.Listen(tlsConf, s.qConf)
+	if err != nil {
+		slog.Error("QUIC listen:", "pid", pid, "err", err.Error())
+		return
+	}
 	defer util.Cleanup(&err, l.Close)
 	slog.Info("Started QUIC server:", "peer", pid, "localAddr", l.Addr())
 

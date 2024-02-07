@@ -78,7 +78,7 @@ func parseArgs() (args Args, err error) {
 func main() {
 	exitCode, err := run()
 	if err != nil && err != context.Canceled {
-		slog.Error(err.Error())
+		slog.Error("main():", "err", err.Error())
 	}
 	slog.Warn("Exit", "code", exitCode)
 	os.Exit(exitCode)

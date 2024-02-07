@@ -288,7 +288,7 @@ func (s *Service) setupNewCandidateHandler(a *ice.Agent, targetPID mpc.PID) (err
 			Data:      c.Marshal(),
 		}
 		if e := websocket.JSON.Send(s.ws, msg); e != nil {
-			slog.Error(err.Error())
+			slog.Error("WebSocket send:", "msg", msg, "err", err.Error())
 		} else {
 			slog.Debug("Sent ICE candidate:", "msg", msg)
 		}
@@ -392,7 +392,7 @@ func (s *Service) handleCerts(ctx context.Context, a *ice.Agent, peerPID mpc.PID
 			return ctx.Err()
 		}
 		if err != nil {
-			slog.Error(err.Error())
+			slog.Error("ice.handleCerts():", "peerPID", peerPID, "err", err.Error())
 			return
 		}
 
@@ -494,16 +494,18 @@ func (s *Service) handleRemoteCredential(a *ice.Agent, msg Message, conns chan<-
 	}
 	slog.Debug("Obtained remote", "cred", cred)
 
+	iceOpType := "Accept"
 	iceOp := a.Accept
 	if s.mpc.IsClient(msg.SourcePID) {
 		slog.Debug("Dialing ICE candidate", "remotePID", msg.SourcePID)
+		iceOpType = "Dial"
 		iceOp = a.Dial
 	} else {
 		slog.Debug("Accepting ICE connection:", "remotePID", msg.SourcePID)
 	}
 	c, err := iceOp(context.TODO(), cred.Ufrag, cred.Pwd)
 	if err != nil {
-		slog.Error("ICE operation:", "err", err)
+		slog.Error("ICE operation:", "type", iceOpType, "peerPID", msg.SourcePID, "err", err)
 		return
 	}
 
