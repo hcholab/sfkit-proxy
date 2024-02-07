@@ -94,7 +94,7 @@ func (s *Service) Stop() error {
 func (s *Service) handleClient(ctx context.Context, tr *quic.Transport, tlsConf *tls.Config, pid mpc.PID, addr net.Addr, conns chan<- net.Conn) (err error) {
 	var c quic.Connection
 	if c, err = tr.Dial(ctx, addr, tlsConf, s.qConf); err != nil {
-		slog.Error(err.Error())
+		slog.Error("Dial:", "addr", addr.String(), "err", err.Error())
 		return // give up to retry
 	}
 	slog.Info("Started QUIC client:", "peer", pid, "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr())
