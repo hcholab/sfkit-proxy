@@ -273,9 +273,11 @@ func getLocalConn(localAddrs []netip.AddrPort, rc net.Conn) (lc *net.TCPConn, er
 
 	// establish a new TCP connection to the local address:port
 	var c net.Conn
+	slog.Debug("Dialing local listener:", "addr", localAddr.String())
 	if c, err = net.Dial("tcp", localAddr.String()); err != nil {
 		return
 	}
 	lc = c.(*net.TCPConn)
+	slog.Debug("Dialed local listener:", "addr", localAddr.String())
 	return
 }
