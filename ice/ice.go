@@ -290,9 +290,13 @@ func (s *Service) setupNewCandidateHandler(a *ice.Agent, targetPID mpc.PID, udpC
 		}
 		slog.Debug("Gathered local ICE candidate:", "peerPID", targetPID, "candidate", c)
 
-		if !(c.Port() == connPort || (c.RelatedAddress() != nil && c.RelatedAddress().Port == connPort)) {
+		relPort := -1
+		if c.RelatedAddress() != nil {
+			relPort = c.RelatedAddress().Port
+		}
+		if c.Port() != connPort || relPort != connPort {
 			slog.Debug("Ignoring local ICE candidate with a different port:",
-				"connPort", connPort, "candidateAddr", c.Address(), "candidateRelatedAddr", c.RelatedAddress(),
+				"connPort", connPort, "candidatePort", c.Port(), "candidateRelatedPort", relPort,
 			)
 			return
 		}
