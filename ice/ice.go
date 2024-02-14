@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/pion/ice/v3"
@@ -171,7 +172,7 @@ func (s *Service) GetTLSConfigs(ctx context.Context, peerPID mpc.PID, udpConn ne
 	}))
 
 	// when we have gathered a new ICE Candidate, send it to the remote peer(s)
-	if err = s.setupNewCandidateHandler(a, peerPID); err != nil {
+	if err = s.setupNewCandidateHandler(a, peerPID, udpConn); err != nil {
 		return
 	}
 
@@ -272,12 +273,23 @@ func parseStunURIs(rawURIs []string) (uris []*stun.URI, err error) {
 	return
 }
 
-func (s *Service) setupNewCandidateHandler(a *ice.Agent, targetPID mpc.PID) (err error) {
+func (s *Service) setupNewCandidateHandler(a *ice.Agent, targetPID mpc.PID, udpConn net.PacketConn) (err error) {
+	connPort, err := strconv.Atoi(strings.SplitN(udpConn.LocalAddr().String(), ":", 2)[1])
+	if err != nil {
+		err = fmt.Errorf("Parsing local UDP port from %s: %s", udpConn.LocalAddr(), err.Error())
+		return
+	}
+
 	if err = a.OnCandidate(func(c ice.Candidate) {
 		if c == nil {
 			return
 		}
-		slog.Debug("Gathered ICE candidate:", "peerPID", targetPID, "candidate", c)
+		slog.Debug("Gathered local ICE candidate:", "peerPID", targetPID, "candidate", c)
+
+		if c.Port() != connPort {
+			slog.Debug("Ignoring local ICE candidate with a different port:", "connPort", connPort, "candidatePort", c.Port())
+			return
+		}
 
 		msg := Message{
 			// IDs are not authoritative, but useful for debugging
