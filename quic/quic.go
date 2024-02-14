@@ -45,8 +45,9 @@ func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan net.C
 	if err != nil {
 		return
 	}
-	tr := &quic.Transport{Conn: udpConn}
+	slog.Debug("Created UDP connection:", "localAddr", udpConn.LocalAddr(), "peerPID", peerPID)
 
+	tr := &quic.Transport{Conn: udpConn}
 	rpc := newRawPacketConn(ctx, tr)
 	tcs, c, err := s.getTLSConfs(ctx, peerPID, rpc)
 	if err != nil {

@@ -255,7 +255,7 @@ func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent,
 		}),
 	})
 	if err == nil {
-		slog.Debug("Created ICE agent")
+		slog.Debug("Created ICE agent:", "localAddr", udpConn.LocalAddr())
 	}
 	return
 }
