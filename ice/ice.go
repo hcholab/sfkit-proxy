@@ -274,7 +274,11 @@ func parseStunURIs(rawURIs []string) (uris []*stun.URI, err error) {
 }
 
 func (s *Service) setupNewCandidateHandler(a *ice.Agent, targetPID mpc.PID, udpConn net.PacketConn) (err error) {
-	connPort, err := strconv.Atoi(strings.SplitN(udpConn.LocalAddr().String(), ":", 2)[1])
+	var connPort int
+	_, udpConnPort, err := net.SplitHostPort(udpConn.LocalAddr().String())
+	if err == nil {
+		connPort, err = strconv.Atoi(udpConnPort)
+	}
 	if err != nil {
 		err = fmt.Errorf("Parsing local UDP port from %s: %s", udpConn.LocalAddr(), err.Error())
 		return
