@@ -248,9 +248,9 @@ func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent,
 			ice.NetworkTypeUDP4,
 			ice.NetworkTypeUDP6,
 		},
-		// UDPMux: ice.NewUDPMuxDefault(ice.UDPMuxParams{
-		// 	UDPConn: udpConn,
-		// }),
+		UDPMux: ice.NewUDPMuxDefault(ice.UDPMuxParams{
+			UDPConn: udpConn,
+		}),
 		UDPMuxSrflx: ice.NewUniversalUDPMuxDefault(ice.UniversalUDPMuxParams{
 			UDPConn: udpConn,
 		}),
