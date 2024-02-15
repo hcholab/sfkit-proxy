@@ -220,7 +220,9 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 
 		// proxy requests: local server <- remote client
 		util.Go(ctx, errs, util.Retry(ctx, func() (err error) {
-			if _, err = io.Copy(localConn, remoteConn); err == io.EOF {
+			nbytes, err := io.Copy(localConn, remoteConn)
+			slog.Debug("Copied local <- remote:", "b", nbytes, "err", err)
+			if err == io.EOF {
 				return localEOF
 			} else if err == nil {
 				err = util.Permanent(io.EOF)
@@ -230,7 +232,9 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 
 		// proxy responses: local server -> remote client
 		util.Go(ctx, errs, util.Retry(ctx, func() (err error) {
-			if _, err = io.Copy(remoteConn, localConn); err == nil {
+			nbytes, err := io.Copy(remoteConn, localConn)
+			slog.Debug("Copied local -> remote:", "b", nbytes, "err", err)
+			if err == nil {
 				// err == nil means local connection was closed,
 				// so we should exit and retry after recreating it
 				return localEOF
