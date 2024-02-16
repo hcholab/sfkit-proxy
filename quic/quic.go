@@ -74,7 +74,10 @@ func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan net.C
 						err = s.handleServer(ctx, tr, tc.Config, peerPID, conns)
 					}
 					if util.IsTimeout(err) {
+						slog.Warn("QUIC connection timeout, retrying:", "peerPID", peerPID)
 						err = nil // retry the connection
+					} else if err != nil {
+						slog.Error("TLSConf error:", "peerPID", peerPID, "err", err.Error())
 					}
 					return
 				})(); err == errDone {
