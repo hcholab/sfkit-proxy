@@ -111,7 +111,7 @@ func (s *Service) handleClient(ctx context.Context, tr *quic.Transport, tlsConf 
 			slog.Error("Opening QUIC stream:", "peer", pid, "err", err)
 			return
 		}
-		slog.Debug("Opened outgoing QUIC stream:", "peer", pid, "remoteAddr", c.RemoteAddr())
+		slog.Debug("Opened outgoing QUIC stream:", "peer", pid, "remoteAddr", c.RemoteAddr(), "nconns", len(conns))
 
 		// non-blocking until len(conns) == s.mpc.Threads
 		conns <- &Conn{Connection: c, Stream: st}
@@ -167,7 +167,7 @@ func (s *Service) handleServerConn(ctx context.Context, pid mpc.PID, conns chan<
 		slog.Error("Accepting QUIC stream:", "err", err)
 		return
 	}
-	slog.Debug("Accepted incoming QUIC stream:", "peer", pid, "remoteAddr", c.RemoteAddr())
+	slog.Debug("Accepted incoming QUIC stream:", "peer", pid, "remoteAddr", c.RemoteAddr(), "nconns", len(conns))
 
 	// non-blocking until len(conns) == s.mpc.Threads
 	conns <- &Conn{Connection: c, Stream: st}

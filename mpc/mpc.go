@@ -18,7 +18,10 @@ type Config struct {
 	// ServerPIDs maps remote server address:port to remote server PID
 	ServerPIDs map[netip.AddrPort]PID
 
-	// PIDClients maps remote client PID to local server address:port
+	// PIDServers maps remote server PID to remote server address:port(s)
+	PIDServers map[PID][]netip.AddrPort
+
+	// PIDClients maps remote client PID to local server address:port(s)
 	PIDClients map[PID][]netip.AddrPort
 
 	// PeerPIDs is a list of all remote PIDs that are
@@ -29,8 +32,9 @@ type Config struct {
 	Threads  int
 }
 
+// IsClient returns true iff the local PID is a client to the peer PID.
 func (c *Config) IsClient(peerPID PID) bool {
-	return c.LocalPID > peerPID
+	return len(c.PIDServers[peerPID]) > 0
 }
 
 // ParseConfig parses MPC TOML config file,
@@ -68,6 +72,7 @@ func ParseConfig(configPath string, localPID PID) (c *Config, err error) {
 					c.PIDClients[clientPID] = append(c.PIDClients[clientPID], ap)
 					peerPIDs[clientPID] = true
 				case clientPID:
+					c.PIDServers[serverPID] = append(c.PIDServers[serverPID], ap)
 					c.ServerPIDs[ap] = serverPID
 					peerPIDs[serverPID] = true
 				}
