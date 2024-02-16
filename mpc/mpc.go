@@ -63,13 +63,15 @@ func ParseConfig(configPath string, localPID PID) (c *Config, err error) {
 				return
 			}
 			for t := 0; t < tc.MpcNumThreads; t++ {
-				switch localPID {
-				case serverPID:
+				switch true {
+				case localPID == serverPID && !c.IsClient(clientPID):
 					c.PIDClients[clientPID] = append(c.PIDClients[clientPID], ap)
 					peerPIDs[clientPID] = true
-				case clientPID:
+				case localPID == clientPID && c.IsClient(serverPID):
 					c.ServerPIDs[ap] = serverPID
 					peerPIDs[serverPID] = true
+				default:
+					continue
 				}
 				ap = netip.AddrPortFrom(ap.Addr(), ap.Port()+1)
 			}
