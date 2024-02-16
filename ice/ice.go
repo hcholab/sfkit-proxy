@@ -518,7 +518,7 @@ func (s *Service) handleRemoteCredential(a *ice.Agent, msg Message, conns chan<-
 
 	iceOpType := "Accept"
 	iceOp := a.Accept
-	if s.mpc.IsControlling(msg.SourcePID) {
+	if s.mpc.IsClient(msg.SourcePID) {
 		slog.Debug("Dialing ICE candidate", "remotePID", msg.SourcePID)
 		iceOpType = "Dial"
 		iceOp = a.Dial
