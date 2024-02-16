@@ -32,6 +32,11 @@ type Config struct {
 	Threads  int
 }
 
+// IsControlling returns true iff the local ICE agent is controlling for the peer PID.
+func (c *Config) IsControlling(peerPID PID) bool {
+	return c.LocalPID > peerPID
+}
+
 // IsClient returns true iff the local PID is a client to the peer PID.
 func (c *Config) IsClient(peerPID PID) bool {
 	return len(c.PIDServers[peerPID]) > 0
