@@ -47,6 +47,7 @@ func ParseConfig(configPath string, localPID PID) (c *Config, err error) {
 	c = &Config{
 		LocalPID:   localPID,
 		ServerPIDs: make(map[netip.AddrPort]PID),
+		PIDServers: make(map[PID][]netip.AddrPort),
 		PIDClients: make(map[PID][]netip.AddrPort),
 		Threads:    tc.MpcNumThreads,
 	}
