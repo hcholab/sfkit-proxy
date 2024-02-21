@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"reflect"
 
 	"github.com/armon/go-socks5"
 
@@ -208,7 +209,7 @@ const tcpBufSize = 4096 // TODO: measure performance and adjust as needed
 func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, localAddrs []netip.AddrPort) (err error) {
 	localEOF := errors.New("LocalEOF")
 	defer util.Cleanup(&err, func() error {
-		slog.Warn("Proxy: closing remote connection:", "remoteAddr", remoteConn.RemoteAddr())
+		slog.Warn("Proxy: closing remote client connection:", "remoteAddr", remoteConn.RemoteAddr())
 		return remoteConn.Close()
 	})
 
@@ -218,7 +219,7 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 			return
 		}
 		defer util.Cleanup(&err, func() error {
-			slog.Warn("Proxy: closing local connection:", "localAddr", localConn.RemoteAddr())
+			slog.Warn("Proxy: closing local server connection:", "localAddr", localConn.RemoteAddr())
 			return localConn.Close()
 		})
 
@@ -249,13 +250,15 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 			}
 			if err == io.EOF {
 				err = util.Permanent(err)
-			} else if err != nil {
+			} else {
 				slog.Error("Error copying local -> remote:", "err", err)
 			}
 			return
 		}))
 
-		if err = <-errs; errors.Is(err, localEOF) {
+		err = <-errs
+		slog.Debug("Proxy: errs ->", "err", err, "errType", reflect.TypeOf(err), "isLocalEOF", errors.Is(err, localEOF))
+		if errors.Is(err, localEOF) {
 			err = nil
 			return // retry
 		}
