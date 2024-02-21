@@ -28,7 +28,7 @@ type Service struct {
 
 const retryMs = 1000
 
-var errDone = util.Permanent(errors.New("Done"))
+var errDone = errors.New("Done")
 
 func NewService(mpcConf *mpc.Config, tcg tlsConfsGetter, errs chan<- error) (s *Service, err error) {
 	qc := &quic.Config{
@@ -81,7 +81,7 @@ func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan net.C
 						slog.Error("TLSConf error:", "peerPID", peerPID, "err", err.Error(), "isClient", s.mpc.IsClient(peerPID), "isPermanent", util.IsPermanent(err), "errType", reflect.TypeOf(err))
 					}
 					return
-				})(); err == errDone {
+				})(); errors.Is(err, errDone) {
 					slog.Error("QUIC connection done:", "peerPID", peerPID)
 					err = nil // handle next TLSConf
 				} else if err != nil {
@@ -129,7 +129,7 @@ func (s *Service) handleClient(ctx context.Context, tr *quic.Transport, tlsConf 
 		conns <- &Conn{Connection: c, Stream: st}
 		nConns++
 		if nConns == s.mpc.Threads {
-			return errDone
+			return util.Permanent(errDone)
 		}
 		return
 	})()
