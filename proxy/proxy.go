@@ -226,6 +226,8 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 				return localEOF
 			} else if err == nil {
 				err = util.Permanent(io.EOF)
+			} else {
+				slog.Error("Error copying local <- remote:", "err", err)
 			}
 			return
 		}))
@@ -241,6 +243,8 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 			}
 			if err == io.EOF {
 				err = util.Permanent(err)
+			} else if err != nil {
+				slog.Error("Error copying local -> remote:", "err", err)
 			}
 			return
 		}))
