@@ -40,6 +40,11 @@ func Permanent(err error) error {
 	return backoff.Permanent(err)
 }
 
+func IsPermanent(err error) bool {
+	_, ok := err.(*backoff.PermanentError)
+	return ok
+}
+
 func IsTimeout(err error) bool {
 	if e, ok := err.(*backoff.PermanentError); ok {
 		return IsTimeout(e.Err)
