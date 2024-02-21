@@ -206,24 +206,30 @@ func (s *Service) handleClientConns(ctx context.Context, localAddrs []netip.Addr
 const tcpBufSize = 4096 // TODO: measure performance and adjust as needed
 
 func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, localAddrs []netip.AddrPort) (err error) {
-	localEOF := util.Permanent(errors.New("LocalEOF"))
-	defer util.Cleanup(&err, remoteConn.Close)
+	localEOF := errors.New("LocalEOF")
+	defer util.Cleanup(&err, func() error {
+		slog.Warn("Proxy: closing remote connection:", "remoteAddr", remoteConn.RemoteAddr())
+		return remoteConn.Close()
+	})
 
 	err = util.Retry(ctx, func() (err error) {
 		var localConn *net.TCPConn
 		if localConn, err = getLocalConn(localAddrs, remoteConn); err != nil {
 			return
 		}
-		defer util.Cleanup(&err, localConn.Close)
+		defer util.Cleanup(&err, func() error {
+			slog.Warn("Proxy: closing local connection:", "localAddr", localConn.RemoteAddr())
+			return localConn.Close()
+		})
 
 		errs := make(chan error, 1)
 
 		// proxy requests: local server <- remote client
 		util.Go(ctx, errs, util.Retry(ctx, func() (err error) {
 			nbytes, err := io.Copy(localConn, remoteConn)
-			slog.Debug("Copied local <- remote:", "b", nbytes, "local", localConn.RemoteAddr(), "remote", remoteConn.RemoteAddr(), "err", err)
+			slog.Debug("Copied local <- remote:", "b", nbytes, "localAddr", localConn.RemoteAddr(), "remoteAddr", remoteConn.RemoteAddr(), "err", err)
 			if err == io.EOF {
-				return localEOF
+				return util.Permanent(localEOF)
 			} else if err == nil {
 				err = util.Permanent(io.EOF)
 			} else {
@@ -235,11 +241,11 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 		// proxy responses: local server -> remote client
 		util.Go(ctx, errs, util.Retry(ctx, func() (err error) {
 			nbytes, err := io.Copy(remoteConn, localConn)
-			slog.Debug("Copied local -> remote:", "b", nbytes, "local", localConn.RemoteAddr(), "remote", remoteConn.RemoteAddr(), "err", err)
+			slog.Debug("Copied local -> remote:", "b", nbytes, "localAddr", localConn.RemoteAddr(), "remoteAddr", remoteConn.RemoteAddr(), "err", err)
 			if err == nil {
 				// err == nil means local connection was closed,
 				// so we should exit and retry after recreating it
-				return localEOF
+				return util.Permanent(localEOF)
 			}
 			if err == io.EOF {
 				err = util.Permanent(err)
@@ -249,7 +255,7 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 			return
 		}))
 
-		if err = <-errs; err == localEOF {
+		if err = <-errs; errors.Is(err, localEOF) {
 			err = nil
 			return // retry
 		}

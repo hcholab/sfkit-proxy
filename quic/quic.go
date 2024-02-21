@@ -149,7 +149,10 @@ func (s *Service) handleServer(ctx context.Context, tr *quic.Transport, tlsConf 
 		slog.Error("QUIC listen:", "pid", pid, "err", err.Error())
 		return
 	}
-	defer util.Cleanup(&err, l.Close)
+	defer util.Cleanup(&err, func() error {
+		slog.Warn("Closing QUIC listener:", "pid", pid, "localAddr", l.Addr())
+		return l.Close()
+	})
 	slog.Info("Started QUIC server:", "peer", pid, "localAddr", l.Addr())
 
 	err = util.Retry(ctx, func() (err error) {
@@ -160,7 +163,10 @@ func (s *Service) handleServer(ctx context.Context, tr *quic.Transport, tlsConf 
 			}
 			return // retry
 		}
-		defer util.Cleanup(&err, l.Close)
+		defer util.Cleanup(&err, func() error {
+			slog.Warn("Closing QUIC connection:", "peer", pid, "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr())
+			return l.Close()
+		})
 		slog.Debug("Accepted incoming QUIC connection:", "peer", pid, "remoteAddr", c.RemoteAddr())
 
 		// this is done synchronously, because normally
