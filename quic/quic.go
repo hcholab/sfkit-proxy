@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"reflect"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -77,7 +78,7 @@ func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan net.C
 						slog.Warn("QUIC connection timeout, retrying:", "peerPID", peerPID)
 						err = nil // retry the connection
 					} else if err != nil {
-						slog.Error("TLSConf error:", "peerPID", peerPID, "err", err.Error(), "isClient", s.mpc.IsClient(peerPID), "isPermanent", util.IsPermanent(err))
+						slog.Error("TLSConf error:", "peerPID", peerPID, "err", err.Error(), "isClient", s.mpc.IsClient(peerPID), "isPermanent", util.IsPermanent(err), "errType", reflect.TypeOf(err))
 					}
 					return
 				})(); err == errDone {
