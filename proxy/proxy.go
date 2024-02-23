@@ -230,9 +230,13 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 			nbytes, err := io.Copy(localConn, remoteConn)
 			slog.Debug("Copied local <- remote:", "b", nbytes, "localAddr", localConn.RemoteAddr(), "remoteAddr", remoteConn.RemoteAddr(), "err", err)
 			if err == io.EOF {
+				// err == io.EOF means local connection was closed,
+				// so we should exit and retry after recreating it
 				return util.Permanent(localEOF)
 			} else if err == nil {
-				err = util.Permanent(io.EOF)
+				// err == nil means remote connection was closed,
+				// which is not expected so we give up
+				return util.Permanent(io.EOF)
 			} else {
 				slog.Error("Error copying local <- remote:", "err", err)
 			}
@@ -295,6 +299,6 @@ func getLocalConn(localAddrs []netip.AddrPort, rc net.Conn) (lc *net.TCPConn, er
 		return
 	}
 	lc = c.(*net.TCPConn)
-	slog.Debug("Dialed local listener:", "addr", localAddr.String())
+	slog.Debug("Dialed local listener:", "localAddr", lc.LocalAddr(), "remoteAddr", lc.RemoteAddr())
 	return
 }
