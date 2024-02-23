@@ -229,17 +229,19 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 		util.Go(ctx, errs, util.Retry(ctx, func() (err error) {
 			nbytes, err := io.Copy(localConn, remoteConn)
 			slog.Debug("Copied local <- remote:", "b", nbytes, "localAddr", localConn.RemoteAddr(), "remoteAddr", remoteConn.RemoteAddr(), "err", err)
-			if err == io.EOF {
-				// err == io.EOF means local connection was closed,
-				// so we should exit and retry after recreating it
-				return util.Permanent(localEOF)
-			} else if err == nil {
-				// err == nil means remote connection was closed,
-				// which is not expected so we give up
-				return util.Permanent(io.EOF)
-			} else {
-				slog.Error("Error copying local <- remote:", "err", err)
-			}
+			// if err == io.EOF {
+			// 	// err == io.EOF means local connection was closed,
+			// 	// so we should exit and retry after recreating it
+			// 	return util.Permanent(localEOF)
+			// } else if err == nil {
+			// 	// err == nil means remote connection was closed,
+			// 	// which is not expected so we give up
+			// 	return util.Permanent(io.EOF)
+			// } else {
+			// 	slog.Error("Error copying local <- remote:", "err", err)
+			// }
+
+			// retry all errors for now
 			return
 		}))
 
@@ -247,16 +249,18 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 		util.Go(ctx, errs, util.Retry(ctx, func() (err error) {
 			nbytes, err := io.Copy(remoteConn, localConn)
 			slog.Debug("Copied local -> remote:", "b", nbytes, "localAddr", localConn.RemoteAddr(), "remoteAddr", remoteConn.RemoteAddr(), "err", err)
-			if err == nil {
-				// err == nil means local connection was closed,
-				// so we should exit and retry after recreating it
-				return util.Permanent(localEOF)
-			}
-			if err == io.EOF {
-				err = util.Permanent(err)
-			} else {
-				slog.Error("Error copying local -> remote:", "err", err)
-			}
+			// if err == nil {
+			// 	// err == nil means local connection was closed,
+			// 	// so we should exit and retry after recreating it
+			// 	return util.Permanent(localEOF)
+			// }
+			// if err == io.EOF {
+			// 	err = util.Permanent(err)
+			// } else {
+			// 	slog.Error("Error copying local -> remote:", "err", err)
+			// }
+
+			// retry all errors for now
 			return
 		}))
 
