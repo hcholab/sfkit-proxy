@@ -242,6 +242,12 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 			// }
 
 			// retry all errors for now
+			if err == nil {
+				// exponential retry
+				err = localEOF
+			} else if err != nil {
+				slog.Error("Error copying local <- remote:", "err", err)
+			}
 			return
 		}))
 
@@ -261,6 +267,12 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 			// }
 
 			// retry all errors for now
+			if err == nil {
+				// exponential retry
+				err = localEOF
+			} else if err != nil {
+				slog.Error("Error copying local -> remote:", "err", err)
+			}
 			return
 		}))
 
