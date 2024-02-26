@@ -143,6 +143,12 @@ type Conn struct {
 	quic.Stream
 }
 
+func (c *Conn) Write(p []byte) (n int, err error) {
+	n, err = c.Stream.Write(p)
+	slog.Debug("Wrote to QUIC stream:", "addr", c.Connection.RemoteAddr(), "n", n, "err", err)
+	return n, err
+}
+
 func (s *Service) handleServer(ctx context.Context, tr *quic.Transport, tlsConf *tls.Config, pid mpc.PID, conns chan<- net.Conn) (err error) {
 	l, err := tr.Listen(tlsConf, s.qConf)
 	if err != nil {
