@@ -234,8 +234,13 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 			if err == nil {
 				// err == nil means remote connection was closed,
 				// which is not expected so we give up
-				slog.Error("Unexpected EOF from remote client:", "remoteAddr", remoteConn.RemoteAddr())
+				slog.Error("Unexpected EOF from remote client:", "localAddr", localConn.RemoteAddr(), "remoteAddr", remoteConn.RemoteAddr())
 				return util.Permanent(io.EOF)
+			} else if e, ok := err.(*net.OpError); ok && e.Op == "write" {
+				// writing to local connection failed,
+				// so we retry after recreating it
+				slog.Error("Unexpected error writing to local server:", "localAddr", localConn.RemoteAddr(), "remoteAddr", remoteConn.RemoteAddr(), "err", e)
+				return util.Permanent(localEOF)
 			} else {
 				// give up
 				slog.Error("Unexpected error copying local <- remote:", "err", err, "errType", reflect.TypeOf(err))
@@ -246,22 +251,22 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 
 		// proxy responses: local server -> remote client
 		util.Go(cctx, errs, util.Retry(cctx, func() (err error) {
-			slog.Debug("Copying local -> remote:", "localAddr", localConn.RemoteAddr(), "remoteAddr", remoteConn.RemoteAddr())
+			slog.Debug("Copying local -> remote:", "localAddr", localConn.RemoteAddr(), "localAddrICE", localConn.LocalAddr(), "remoteAddr", remoteConn.RemoteAddr())
 			nbytes, err := io.Copy(remoteConn, localConn)
-			slog.Debug("Copied local -> remote:", "nbytes", nbytes, "localAddr", localConn.RemoteAddr(), "remoteAddr", remoteConn.RemoteAddr())
+			slog.Debug("Copied local -> remote:", "nbytes", nbytes, "localAddr", localConn.RemoteAddr(), "localAddrICE", localConn.LocalAddr(), "remoteAddr", remoteConn.RemoteAddr())
 			if err == nil {
 				// err == nil means local connection was closed,
 				// so we exit and retry after recreating it
-				slog.Error("Unexpected EOF from local server:", "localAddr", localConn.RemoteAddr())
+				slog.Error("Unexpected EOF from local server:", "localAddr", localConn.RemoteAddr(), "localAddrICE", localConn.LocalAddr(), "remoteAddr", remoteConn.RemoteAddr())
 				return util.Permanent(localEOF)
 			} else if e, ok := err.(*net.OpError); ok && e.Op == "read" {
 				// another error reading from local conneciton,
 				// so we retry after recreating it
-				slog.Error("Unexpected error from local server:", "localAddr", localConn.RemoteAddr(), "err", e)
+				slog.Error("Unexpected error reading from local server:", "localAddr", localConn.RemoteAddr(), "localAddrICE", localConn.LocalAddr(), "remoteAddr", remoteConn.RemoteAddr(), "err", e)
 				return util.Permanent(localEOF)
 			} else {
 				// give up
-				slog.Error("Unexpected error copying local -> remote:", "err", err, "errType", reflect.TypeOf(err))
+				slog.Error("Unexpected error copying local -> remote:", "localAddr", localConn.RemoteAddr(), "localAddrICE", localConn.LocalAddr(), "remoteAddr", remoteConn.RemoteAddr(), "err", err, "errType", reflect.TypeOf(err))
 				err = util.Permanent(err)
 			}
 			return
@@ -270,6 +275,7 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 		err = <-errs
 		if errors.Is(err, localEOF) {
 			err = nil
+			slog.Warn("Retrying local connection:", "localAddr", localConn.RemoteAddr(), "localAddrICE", localConn.LocalAddr(), "remoteAddr", remoteConn.RemoteAddr())
 			return // retry local connection
 		}
 		return util.Permanent(err)
