@@ -204,8 +204,6 @@ func (s *Service) handleClientConns(ctx context.Context, localAddrs []netip.Addr
 	}
 }
 
-const tcpBufSize = 4096 // TODO: measure performance and adjust as needed
-
 func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, localAddrs []netip.AddrPort) (err error) {
 	localEOF := errors.New("LocalEOF")
 	defer util.Cleanup(&err, func() error {
@@ -225,62 +223,54 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 
 		errs := make(chan error, 1)
 
-		// proxy requests: local server <- remote client
-		util.Go(ctx, errs, util.Retry(ctx, func() (err error) {
-			nbytes, err := io.Copy(localConn, remoteConn)
-			slog.Debug("Copied local <- remote:", "b", nbytes, "localAddr", localConn.RemoteAddr(), "remoteAddr", remoteConn.RemoteAddr(), "err", err)
-			// if err == io.EOF {
-			// 	// err == io.EOF means local connection was closed,
-			// 	// so we should exit and retry after recreating it
-			// 	return util.Permanent(localEOF)
-			// } else if err == nil {
-			// 	// err == nil means remote connection was closed,
-			// 	// which is not expected so we give up
-			// 	return util.Permanent(io.EOF)
-			// } else {
-			// 	slog.Error("Error copying local <- remote:", "err", err)
-			// }
+		cctx, cancel := context.WithCancel(ctx)
+		defer cancel()
 
-			// retry all errors for now
+		// proxy requests: local server <- remote client
+		util.Go(cctx, errs, util.Retry(cctx, func() (err error) {
+			slog.Debug("Copying local <- remote:", "localAddr", localConn.RemoteAddr(), "remoteAddr", remoteConn.RemoteAddr())
+			nbytes, err := io.Copy(localConn, remoteConn)
+			slog.Debug("Copied local <- remote:", "nbytes", nbytes, "localAddr", localConn.RemoteAddr(), "remoteAddr", remoteConn.RemoteAddr())
 			if err == nil {
-				// exponential retry
-				err = localEOF
-			} else if err != nil {
-				slog.Error("Error copying local <- remote:", "err", err)
+				// err == nil means remote connection was closed,
+				// which is not expected so we give up
+				slog.Error("Unexpected EOF from remote client:", "remoteAddr", remoteConn.RemoteAddr())
+				return util.Permanent(io.EOF)
+			} else {
+				// give up
+				slog.Error("Unexpected error copying local <- remote:", "err", err, "errType", reflect.TypeOf(err))
+				err = util.Permanent(err)
 			}
 			return
 		}))
 
 		// proxy responses: local server -> remote client
-		util.Go(ctx, errs, util.Retry(ctx, func() (err error) {
+		util.Go(cctx, errs, util.Retry(cctx, func() (err error) {
+			slog.Debug("Copying local -> remote:", "localAddr", localConn.RemoteAddr(), "remoteAddr", remoteConn.RemoteAddr())
 			nbytes, err := io.Copy(remoteConn, localConn)
-			slog.Debug("Copied local -> remote:", "b", nbytes, "localAddr", localConn.RemoteAddr(), "remoteAddr", remoteConn.RemoteAddr(), "err", err)
-			// if err == nil {
-			// 	// err == nil means local connection was closed,
-			// 	// so we should exit and retry after recreating it
-			// 	return util.Permanent(localEOF)
-			// }
-			// if err == io.EOF {
-			// 	err = util.Permanent(err)
-			// } else {
-			// 	slog.Error("Error copying local -> remote:", "err", err)
-			// }
-
-			// retry all errors for now
+			slog.Debug("Copied local -> remote:", "nbytes", nbytes, "localAddr", localConn.RemoteAddr(), "remoteAddr", remoteConn.RemoteAddr())
 			if err == nil {
-				// exponential retry
-				err = localEOF
-			} else if err != nil {
-				slog.Error("Error copying local -> remote:", "err", err)
+				// err == nil means local connection was closed,
+				// so we exit and retry after recreating it
+				slog.Error("Unexpected EOF from local server:", "localAddr", localConn.RemoteAddr())
+				return util.Permanent(localEOF)
+			} else if e, ok := err.(*net.OpError); ok && e.Op == "read" {
+				// another error reading from local conneciton,
+				// so we retry after recreating it
+				slog.Error("Unexpected error from local server:", "localAddr", localConn.RemoteAddr(), "err", e)
+				return util.Permanent(localEOF)
+			} else {
+				// give up
+				slog.Error("Unexpected error copying local -> remote:", "err", err, "errType", reflect.TypeOf(err))
+				err = util.Permanent(err)
 			}
 			return
 		}))
 
 		err = <-errs
-		slog.Debug("Proxy: errs ->", "err", err, "errType", reflect.TypeOf(err), "isLocalEOF", errors.Is(err, localEOF))
 		if errors.Is(err, localEOF) {
 			err = nil
-			return // retry
+			return // retry local connection
 		}
 		return util.Permanent(err)
 	})()
