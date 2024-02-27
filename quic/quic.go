@@ -3,9 +3,11 @@ package quic
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
+	"reflect"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -25,6 +27,8 @@ type Service struct {
 }
 
 const retryMs = 1000
+
+var errDone = errors.New("Done")
 
 func NewService(mpcConf *mpc.Config, tcg tlsConfsGetter, errs chan<- error) (s *Service, err error) {
 	qc := &quic.Config{
@@ -64,15 +68,24 @@ func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan net.C
 			case tc := <-tcs:
 				slog.Debug("Using TLS config for", "peerPID", peerPID)
 
-				if err = util.Retry(ctx, func() error {
+				if err = util.Retry(ctx, func() (err error) {
 					if s.mpc.IsClient(peerPID) {
-						return s.handleClient(ctx, tr, tc.Config, peerPID, tc.RemoteAddr, conns)
+						err = s.handleClient(ctx, tr, tc.Config, peerPID, tc.RemoteAddr, conns)
 					} else {
-						return s.handleServer(ctx, tr, tc.Config, peerPID, conns)
+						err = s.handleServer(ctx, tr, tc.Config, peerPID, conns)
 					}
-				})(); err != nil {
-					slog.Error("quic.GetConns():", "peerPID", peerPID, "err", err.Error())
+					if util.IsTimeout(err) {
+						slog.Warn("QUIC connection timeout, retrying:", "peerPID", peerPID)
+						err = nil // retry the connection
+					} else if err != nil && !errors.Is(err, errDone) {
+						slog.Error("TLSConf error:", "peerPID", peerPID, "err", err.Error(), "isClient", s.mpc.IsClient(peerPID), "isPermanent", util.IsPermanent(err), "errType", reflect.TypeOf(err))
+					}
 					return
+				})(); errors.Is(err, errDone) {
+					slog.Error("QUIC connection done:", "peerPID", peerPID)
+					err = nil // handle next TLSConf
+				} else if err != nil {
+					slog.Error("quic.GetConns():", "peerPID", peerPID, "err", err.Error())
 				}
 			case <-ctx.Done():
 				return ctx.Err()
@@ -96,25 +109,30 @@ func (s *Service) handleClient(ctx context.Context, tr *quic.Transport, tlsConf 
 	var c quic.Connection
 	if c, err = tr.Dial(ctx, addr, tlsConf, s.qConf); err != nil {
 		slog.Error("QUIC dial:", "addr", addr.String(), "err", err.Error())
-		return // give up to retry
+		return // give up to retry the connection
 	}
 	slog.Info("Started QUIC client:", "peer", pid, "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr())
 
+	nConns := 0
 	err = util.Retry(ctx, func() (err error) {
 		var st quic.Stream
 		if st, err = c.OpenStreamSync(ctx); err != nil {
 			if util.IsCanceledOrTimeout(err) {
-				// give up to re-establish connection
+				// give up, possibly retry the connection
 				return util.Permanent(err)
 			}
-			// otherwise, retry
+			// otherwise, retry stream opening
 			slog.Error("Opening QUIC stream:", "peer", pid, "err", err)
 			return
 		}
-		slog.Debug("Opened outgoing QUIC stream:", "peer", pid, "remoteAddr", c.RemoteAddr(), "nconns", len(conns))
+		slog.Debug("Opened outgoing QUIC stream:", "peer", pid, "remoteAddr", c.RemoteAddr())
 
 		// non-blocking until len(conns) == s.mpc.Threads
 		conns <- &Conn{Connection: c, Stream: st}
+		nConns++
+		if nConns == s.mpc.Threads {
+			return util.Permanent(errDone)
+		}
 		return
 	})()
 	return
@@ -133,7 +151,10 @@ func (s *Service) handleServer(ctx context.Context, tr *quic.Transport, tlsConf 
 		slog.Error("QUIC listen:", "pid", pid, "err", err.Error())
 		return
 	}
-	defer util.Cleanup(&err, l.Close)
+	defer util.Cleanup(&err, func() error {
+		slog.Warn("Closing QUIC listener:", "pid", pid, "localAddr", l.Addr())
+		return l.Close()
+	})
 	slog.Info("Started QUIC server:", "peer", pid, "localAddr", l.Addr())
 
 	err = util.Retry(ctx, func() (err error) {
@@ -144,7 +165,10 @@ func (s *Service) handleServer(ctx context.Context, tr *quic.Transport, tlsConf 
 			}
 			return // retry
 		}
-		defer util.Cleanup(&err, l.Close)
+		defer util.Cleanup(&err, func() error {
+			slog.Warn("Closing QUIC connection:", "peer", pid, "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr())
+			return l.Close()
+		})
 		slog.Debug("Accepted incoming QUIC connection:", "peer", pid, "remoteAddr", c.RemoteAddr())
 
 		// this is done synchronously, because normally
@@ -167,7 +191,7 @@ func (s *Service) handleServerConn(ctx context.Context, pid mpc.PID, conns chan<
 		slog.Error("Accepting QUIC stream:", "err", err)
 		return
 	}
-	slog.Debug("Accepted incoming QUIC stream:", "peer", pid, "remoteAddr", c.RemoteAddr(), "nconns", len(conns))
+	slog.Debug("Accepted incoming QUIC stream:", "peer", pid, "remoteAddr", c.RemoteAddr())
 
 	// non-blocking until len(conns) == s.mpc.Threads
 	conns <- &Conn{Connection: c, Stream: st}

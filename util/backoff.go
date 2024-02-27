@@ -27,7 +27,7 @@ func Retry(ctx context.Context, op backoff.Operation) func() error {
 			bCtx := backoff.WithContext(b, ctx)
 
 			if err = backoff.Retry(op, bCtx); err != nil {
-				return
+				return backoff.Permanent(err)
 			}
 		}
 	}
@@ -38,6 +38,11 @@ func Permanent(err error) error {
 		return e
 	}
 	return backoff.Permanent(err)
+}
+
+func IsPermanent(err error) bool {
+	_, ok := err.(*backoff.PermanentError)
+	return ok
 }
 
 func IsTimeout(err error) bool {

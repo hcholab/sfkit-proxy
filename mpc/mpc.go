@@ -18,10 +18,7 @@ type Config struct {
 	// ServerPIDs maps remote server address:port to remote server PID
 	ServerPIDs map[netip.AddrPort]PID
 
-	// PIDServers maps remote server PID to remote server address:port(s)
-	PIDServers map[PID][]netip.AddrPort
-
-	// PIDClients maps remote client PID to local server address:port(s)
+	// PIDClients maps remote client PID to local server address:port
 	PIDClients map[PID][]netip.AddrPort
 
 	// PeerPIDs is a list of all remote PIDs that are
@@ -32,14 +29,8 @@ type Config struct {
 	Threads  int
 }
 
-// IsControlling returns true iff the local ICE agent is controlling for the peer PID.
-func (c *Config) IsControlling(peerPID PID) bool {
-	return c.LocalPID > peerPID
-}
-
-// IsClient returns true iff the local PID is a client to the peer PID.
 func (c *Config) IsClient(peerPID PID) bool {
-	return len(c.PIDServers[peerPID]) > 0
+	return c.LocalPID > peerPID
 }
 
 // ParseConfig parses MPC TOML config file,
@@ -52,7 +43,6 @@ func ParseConfig(configPath string, localPID PID) (c *Config, err error) {
 	c = &Config{
 		LocalPID:   localPID,
 		ServerPIDs: make(map[netip.AddrPort]PID),
-		PIDServers: make(map[PID][]netip.AddrPort),
 		PIDClients: make(map[PID][]netip.AddrPort),
 		Threads:    tc.MpcNumThreads,
 	}
@@ -73,14 +63,15 @@ func ParseConfig(configPath string, localPID PID) (c *Config, err error) {
 				return
 			}
 			for t := 0; t < tc.MpcNumThreads; t++ {
-				switch localPID {
-				case serverPID:
+				switch true {
+				case localPID == serverPID && !c.IsClient(clientPID):
 					c.PIDClients[clientPID] = append(c.PIDClients[clientPID], ap)
 					peerPIDs[clientPID] = true
-				case clientPID:
-					c.PIDServers[serverPID] = append(c.PIDServers[serverPID], ap)
+				case localPID == clientPID && c.IsClient(serverPID):
 					c.ServerPIDs[ap] = serverPID
 					peerPIDs[serverPID] = true
+				default:
+					continue
 				}
 				ap = netip.AddrPortFrom(ap.Addr(), ap.Port()+1)
 			}
