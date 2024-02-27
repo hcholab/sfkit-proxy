@@ -20,5 +20,8 @@ configGlobal.toml
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
+# Logs
+*.log
+
 # main executable
 sfkit-proxy
