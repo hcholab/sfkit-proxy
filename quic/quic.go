@@ -77,7 +77,7 @@ func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan net.C
 					if util.IsTimeout(err) {
 						slog.Warn("QUIC connection timeout, retrying:", "peerPID", peerPID)
 						err = nil // retry the connection
-					} else if err != nil {
+					} else if err != nil && !errors.Is(err, errDone) {
 						slog.Error("TLSConf error:", "peerPID", peerPID, "err", err.Error(), "isClient", s.mpc.IsClient(peerPID), "isPermanent", util.IsPermanent(err), "errType", reflect.TypeOf(err))
 					}
 					return
@@ -118,7 +118,8 @@ func (s *Service) handleClient(ctx context.Context, tr *quic.Transport, tlsConf 
 		var st quic.Stream
 		if st, err = c.OpenStreamSync(ctx); err != nil {
 			if util.IsCanceledOrTimeout(err) {
-				return util.Permanent(err) // give up, possibly retry the connection
+				// give up, possibly retry the connection
+				return util.Permanent(err)
 			}
 			// otherwise, retry stream opening
 			slog.Error("Opening QUIC stream:", "peer", pid, "err", err)
@@ -126,6 +127,7 @@ func (s *Service) handleClient(ctx context.Context, tr *quic.Transport, tlsConf 
 		}
 		slog.Debug("Opened outgoing QUIC stream:", "peer", pid, "remoteAddr", c.RemoteAddr())
 
+		// non-blocking until len(conns) == s.mpc.Threads
 		conns <- &Conn{Connection: c, Stream: st}
 		nConns++
 		if nConns == s.mpc.Threads {
@@ -141,12 +143,6 @@ func (s *Service) handleClient(ctx context.Context, tr *quic.Transport, tlsConf 
 type Conn struct {
 	quic.Connection
 	quic.Stream
-}
-
-func (c *Conn) Write(p []byte) (n int, err error) {
-	n, err = c.Stream.Write(p)
-	slog.Debug("Wrote to QUIC stream:", "addr", c.Connection.RemoteAddr(), "n", n, "err", err)
-	return n, err
 }
 
 func (s *Service) handleServer(ctx context.Context, tr *quic.Transport, tlsConf *tls.Config, pid mpc.PID, conns chan<- net.Conn) (err error) {

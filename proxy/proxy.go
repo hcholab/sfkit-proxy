@@ -311,6 +311,6 @@ func getLocalConn(localAddrs []netip.AddrPort, rc net.Conn) (lc *net.TCPConn, er
 		return
 	}
 	lc = c.(*net.TCPConn)
-	slog.Debug("Dialed local listener:", "localAddr", lc.RemoteAddr(), "localAddrICE", lc.LocalAddr())
+	slog.Debug("Dialed local listener:", "localAddr", lc.RemoteAddr())
 	return
 }
