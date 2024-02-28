@@ -57,7 +57,7 @@ func (c *RawPacketConn) GetTransport() *quic.Transport {
 }
 
 func (c *RawPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
-	return c.handleOperation(c.readDeadline.ctx, c.readDeadline.cancel,
+	return c.handleOperation(c.readDeadline.ctx,
 		func(ctx context.Context) (int, net.Addr, error) {
 			return c.tr.ReadNonQUICPacket(ctx, p)
 		},
@@ -65,7 +65,7 @@ func (c *RawPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 }
 
 func (c *RawPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
-	n, _, err := c.handleOperation(c.writeDeadline.ctx, c.writeDeadline.cancel,
+	n, _, err := c.handleOperation(c.writeDeadline.ctx,
 		func(_ context.Context) (n int, _ net.Addr, err error) {
 			n, err = c.tr.WriteTo(p, addr)
 			return
@@ -76,7 +76,6 @@ func (c *RawPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 
 func (c *RawPacketConn) handleOperation(
 	ctx context.Context,
-	cancel context.CancelFunc,
 	op func(ctx context.Context) (int, net.Addr, error),
 ) (
 	int, net.Addr, error,
