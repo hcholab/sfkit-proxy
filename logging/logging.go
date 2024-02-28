@@ -95,7 +95,7 @@ func (l leveledLogger) Trace(msg string) {
 }
 
 func (l leveledLogger) Tracef(format string, args ...any) {
-	slog.Log(context.Background(), slog.LevelDebug-1, fmt.Sprintf(format, args...))
+	slog.Debug(fmt.Sprintf(format, args...))
 }
 
 func (l leveledLogger) Debug(msg string) {
