@@ -258,8 +258,9 @@ func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent,
 	}
 
 	a, err = ice.NewAgent(&ice.AgentConfig{
-		Urls:         stunURIs,
-		NetworkTypes: netTypes,
+		Urls:           stunURIs,
+		NetworkTypes:   netTypes,
+		CandidateTypes: []ice.CandidateType{ice.CandidateTypeServerReflexive},
 		UDPMux: ice.NewUDPMuxDefault(ice.UDPMuxParams{
 			UDPConn: udpConn,
 			Logger:  logFactory.NewLogger("ice"),
