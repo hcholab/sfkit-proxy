@@ -19,6 +19,7 @@ import (
 	"golang.org/x/net/websocket"
 
 	"github.com/hcholab/sfkit-proxy/auth"
+	"github.com/hcholab/sfkit-proxy/logging"
 	"github.com/hcholab/sfkit-proxy/mpc"
 	"github.com/hcholab/sfkit-proxy/util"
 )
@@ -126,7 +127,7 @@ func NewService(ctx context.Context, wsReady chan<- any, api *url.URL, rawStunUR
 		// listen to WebSocket messages and
 		// forward them to the corresponding channel
 		return util.Retry(ctx, func() error {
-			return s.receiveMessage(ctx)
+			return s.receiveMessage()
 		})()
 	})
 
@@ -163,7 +164,7 @@ func (s *Service) GetTLSConfigs(ctx context.Context, peerPID mpc.PID, udpConn ne
 
 	// start listening for ICE signaling messages
 	util.Go(ctx, s.errs, util.Retry(ctx, func() error {
-		return s.handleSignals(ctx, a, peerPID, conns, peerCerts)
+		return s.handleSignals(a, peerPID, conns, peerCerts)
 	}))
 
 	// generate TLS certificates and exhange them with peers
@@ -217,7 +218,7 @@ func (s *Service) connectWebSocket(ctx context.Context, api *url.URL, authKey st
 	return
 }
 
-func (s *Service) receiveMessage(ctx context.Context) (err error) {
+func (s *Service) receiveMessage() (err error) {
 	var msg Message
 	if err = websocket.JSON.Receive(s.ws, &msg); err != nil {
 		if err == io.EOF {
@@ -242,6 +243,7 @@ func (s *Service) receiveMessage(ctx context.Context) (err error) {
 }
 
 func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent, err error) {
+	logFactory := &logging.LoggerFactory{}
 	a, err = ice.NewAgent(&ice.AgentConfig{
 		Urls: stunURIs,
 		NetworkTypes: []ice.NetworkType{
@@ -251,10 +253,13 @@ func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent,
 		CandidateTypes: []ice.CandidateType{ice.CandidateTypeServerReflexive},
 		UDPMux: ice.NewUDPMuxDefault(ice.UDPMuxParams{
 			UDPConn: udpConn,
+			Logger:  logFactory.NewLogger("ice"),
 		}),
 		UDPMuxSrflx: ice.NewUniversalUDPMuxDefault(ice.UniversalUDPMuxParams{
 			UDPConn: udpConn,
+			Logger:  logFactory.NewLogger("ice"),
 		}),
+		LoggerFactory: logFactory,
 	})
 	if err == nil {
 		slog.Debug("Created ICE agent:", "localAddr", udpConn.LocalAddr())
@@ -479,7 +484,7 @@ func (s *Service) generateConnCert(a *ice.Agent, conn net.Conn, peerPID mpc.PID)
 
 type ConnOp func(context.Context, string, string) (net.Conn, error)
 
-func (s *Service) handleSignals(ctx context.Context, a *ice.Agent, peerPID mpc.PID, conns chan<- net.Conn, peerCerts chan<- *Certificate) (err error) {
+func (s *Service) handleSignals(a *ice.Agent, peerPID mpc.PID, conns chan<- net.Conn, peerCerts chan<- *Certificate) (err error) {
 	switch msg := <-s.msgs[peerPID]; msg.Type {
 	case MessageTypeCandidate:
 		handleRemoteCandidate(a, msg.Data)

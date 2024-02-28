@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
+	"github.com/pion/logging"
 )
 
 type prettyHandlerOptions struct {
@@ -83,4 +84,54 @@ func SetupDefault(verbose bool) {
 
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
+}
+
+// Needed for pion/ice
+
+type leveledLogger struct{}
+
+func (l leveledLogger) Trace(msg string) {
+	slog.Debug(msg)
+}
+
+func (l leveledLogger) Tracef(format string, args ...any) {
+	slog.Log(context.Background(), slog.LevelDebug-1, fmt.Sprintf(format, args...))
+}
+
+func (l leveledLogger) Debug(msg string) {
+	slog.Debug(msg)
+}
+
+func (l leveledLogger) Debugf(format string, args ...any) {
+	slog.Debug(fmt.Sprintf(format, args...))
+}
+
+func (l leveledLogger) Info(msg string) {
+	slog.Info(msg)
+}
+
+func (l leveledLogger) Infof(format string, args ...any) {
+	slog.Info(fmt.Sprintf(format, args...))
+}
+
+func (l leveledLogger) Warn(msg string) {
+	slog.Debug(msg)
+}
+
+func (l leveledLogger) Warnf(format string, args ...any) {
+	slog.Debug(fmt.Sprintf(format, args...))
+}
+
+func (l leveledLogger) Error(msg string) {
+	slog.Debug(msg)
+}
+
+func (l leveledLogger) Errorf(format string, args ...any) {
+	slog.Debug(fmt.Sprintf(format, args...))
+}
+
+type LoggerFactory struct{}
+
+func (f *LoggerFactory) NewLogger(_ string) logging.LeveledLogger {
+	return leveledLogger{}
 }
