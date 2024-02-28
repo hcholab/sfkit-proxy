@@ -246,6 +246,7 @@ func (s *Service) receiveMessage() (err error) {
 
 func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent, err error) {
 	logFactory := &logging.LoggerFactory{}
+	logger := logFactory.NewLogger("ice")
 
 	netTypes := []ice.NetworkType{}
 	switch UDPNet {
@@ -263,11 +264,11 @@ func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent,
 		CandidateTypes: []ice.CandidateType{ice.CandidateTypeServerReflexive},
 		UDPMux: ice.NewUDPMuxDefault(ice.UDPMuxParams{
 			UDPConn: udpConn,
-			Logger:  logFactory.NewLogger("ice"),
+			Logger:  logger,
 		}),
 		UDPMuxSrflx: ice.NewUniversalUDPMuxDefault(ice.UniversalUDPMuxParams{
 			UDPConn: udpConn,
-			Logger:  logFactory.NewLogger("ice"),
+			Logger:  logger,
 		}),
 		LoggerFactory: logFactory,
 	})
