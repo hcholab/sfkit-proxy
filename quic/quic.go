@@ -45,7 +45,8 @@ func NewService(mpcConf *mpc.Config, tcg tlsConfsGetter, errs chan<- error) (s *
 func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan net.Conn, err error) {
 	slog.Debug("Getting connection for", "peerPID", peerPID)
 
-	udpConn, err := net.ListenUDP("udp", nil)
+	// TODO: use "udp" for both IPv4 and IPv6
+	udpConn, err := net.ListenUDP("udp4", nil)
 	if err != nil {
 		return
 	}
