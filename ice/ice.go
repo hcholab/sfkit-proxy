@@ -70,14 +70,14 @@ const (
 
 var defaultSTUNServers = []string{
 	// TODO: can we rely on Google?
-	"stun:stun.l.google.com:19302",
+	// "stun:stun.l.google.com:19302",
 	// "stun:stun1.l.google.com:19302",
 	// "stun:stun2.l.google.com:19302",
 	// "stun:stun3.l.google.com:19302",
 	// "stun:stun4.l.google.com:19302",
 
 	// from Syncthing, should be reliable
-	// "stun:stun.syncthing.net:3478",
+	"stun:stun.syncthing.net:3478",
 	// "stun:stun.callwithus.com:3478",
 	// "stun:stun.counterpath.com:3478",
 	// "stun:stun.counterpath.net:3478",
@@ -250,7 +250,6 @@ func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent,
 			ice.NetworkTypeUDP4,
 			ice.NetworkTypeUDP6,
 		},
-		CandidateTypes: []ice.CandidateType{ice.CandidateTypeServerReflexive},
 		UDPMux: ice.NewUDPMuxDefault(ice.UDPMuxParams{
 			UDPConn: udpConn,
 			Logger:  logFactory.NewLogger("ice"),
