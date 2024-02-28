@@ -248,7 +248,7 @@ func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent,
 		Urls: stunURIs,
 		NetworkTypes: []ice.NetworkType{
 			ice.NetworkTypeUDP4,
-			ice.NetworkTypeUDP6,
+			// ice.NetworkTypeUDP6,
 		},
 		UDPMux: ice.NewUDPMuxDefault(ice.UDPMuxParams{
 			UDPConn: udpConn,
