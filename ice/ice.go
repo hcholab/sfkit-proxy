@@ -66,6 +66,8 @@ const (
 
 	idLen   = 15
 	idRunes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+	UDPNet = "udp4" // TODO: use "udp" for both IPv4 and IPv6
 )
 
 var defaultSTUNServers = []string{
@@ -244,12 +246,20 @@ func (s *Service) receiveMessage() (err error) {
 
 func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent, err error) {
 	logFactory := &logging.LoggerFactory{}
+
+	netTypes := []ice.NetworkType{}
+	switch UDPNet {
+	case "udp4":
+		netTypes = append(netTypes, ice.NetworkTypeUDP4)
+	case "udp6":
+		netTypes = append(netTypes, ice.NetworkTypeUDP6)
+	case "udp":
+		netTypes = append(netTypes, ice.NetworkTypeUDP4, ice.NetworkTypeUDP6)
+	}
+
 	a, err = ice.NewAgent(&ice.AgentConfig{
-		Urls: stunURIs,
-		NetworkTypes: []ice.NetworkType{
-			ice.NetworkTypeUDP4,
-			// ice.NetworkTypeUDP6,
-		},
+		Urls:         stunURIs,
+		NetworkTypes: netTypes,
 		UDPMux: ice.NewUDPMuxDefault(ice.UDPMuxParams{
 			UDPConn: udpConn,
 			Logger:  logFactory.NewLogger("ice"),
@@ -407,7 +417,8 @@ func (s *Service) handleCerts(ctx context.Context, a *ice.Agent, peerPID mpc.PID
 
 		case peerCert := <-peerCerts:
 			for _, peerAddr := range peerCert.Addrs {
-				if _, e := net.ResolveUDPAddr("udp", peerAddr); e != nil {
+				// TODO: use "udp" for both IPv4 and IPv6
+				if _, e := net.ResolveUDPAddr(UDPNet, peerAddr); e != nil {
 					err = e
 					break
 				}
@@ -433,7 +444,7 @@ func (s *Service) handleCerts(ctx context.Context, a *ice.Agent, peerPID mpc.PID
 			if e != nil {
 				return e
 			}
-			remoteAddr, _ := net.ResolveUDPAddr("udp", peerAddr) // already checked above
+			remoteAddr, _ := net.ResolveUDPAddr(UDPNet, peerAddr) // already checked above
 			tlsConfs <- &TLSConf{Config: tlsConf, RemoteAddr: remoteAddr}
 			slog.Debug("Created TLS config for", "peerAddr", peerAddr)
 
