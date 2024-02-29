@@ -91,11 +91,11 @@ func SetupDefault(verbose bool) {
 type leveledLogger struct{}
 
 func (l leveledLogger) Trace(msg string) {
-	slog.Debug(msg)
+	slog.Log(context.Background(), slog.LevelDebug-1, msg)
 }
 
 func (l leveledLogger) Tracef(format string, args ...any) {
-	slog.Debug(fmt.Sprintf(format, args...))
+	l.Trace(fmt.Sprintf(format, args...))
 }
 
 func (l leveledLogger) Debug(msg string) {
