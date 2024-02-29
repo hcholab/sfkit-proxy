@@ -72,8 +72,8 @@ github.com/gopherjs/gopherjs v1.17.2/go.mod h1:pRRIvn/QzFLrKfvEz3qUuEhtE/zLCWfre
 github.com/gorilla/websocket v1.4.1/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/gorilla/websocket v1.5.1 h1:gmztn0JnHVt9JZquRuzLw3g4wouNVzKL15iLr/zn/QY=
 github.com/gorilla/websocket v1.5.1/go.mod h1:x3kM2JMyaluk02fnUJpQuwD2dCS5NDG2ZHL0uE0tcaY=
-github.com/hcholab/ice/v3 v3.0.0-20240228220012-b44ef412a3a9 h1:vKnstY51ce7GOdb2xyhV6ge5GqpH7HyuDEomsoQWOuQ=
-github.com/hcholab/ice/v3 v3.0.0-20240228220012-b44ef412a3a9/go.mod h1:YMLU7qbKfVjmEv7EoZPIVEI+kNYxWCdPK3VS0BU+U4Q=
+github.com/hcholab/ice/v3 v3.0.0-20240229152139-5acccbfc85cb h1:blhagO4Kc/MhPGvpnrbxXEldX2zDW0p+EtsDrWagYGg=
+github.com/hcholab/ice/v3 v3.0.0-20240229152139-5acccbfc85cb/go.mod h1:YMLU7qbKfVjmEv7EoZPIVEI+kNYxWCdPK3VS0BU+U4Q=
 github.com/hcholab/lattigo/v2 v2.1.2-0.20220628190737-bde274261547 h1:VEEQFWXm0jiR1FhNbaKqYMi+75KC246UL7qJFFl1078=
 github.com/hcholab/lattigo/v2 v2.1.2-0.20220628190737-bde274261547/go.mod h1:WlQEGFpjCuC4uDHQTEjZYzClnbKiZOacSDjhdzujp28=
 github.com/hcholab/onet/v3 v3.0.0-20230828232509-90c2e1097481 h1:8jchFMy2/Lu1ViQ0/oL/ssoW5sXQjn+ZcNRFS10c4Ic=

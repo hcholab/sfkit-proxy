@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pion/ice/v3"
 	"github.com/pion/stun/v2"
@@ -69,6 +70,8 @@ const (
 
 	UDPNet = "udp4" // TODO: use "udp" for both IPv4 and IPv6
 )
+
+var gatherTimeout = 30 * time.Second
 
 var defaultSTUNServers = []string{
 	// TODO: can we rely on Google?
@@ -270,6 +273,7 @@ func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent,
 			UDPConn: udpConn,
 			Logger:  logger,
 		}),
+		GatherTimeout: &gatherTimeout,
 		LoggerFactory: logFactory,
 	})
 	if err == nil {
