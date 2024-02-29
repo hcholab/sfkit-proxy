@@ -75,7 +75,7 @@ var gatherTimeout = 30 * time.Second
 
 var defaultSTUNServers = []string{
 	// TODO: can we rely on Google?
-	// "stun:stun.l.google.com:19302",
+	"stun:stun.l.google.com:19302",
 	// "stun:stun1.l.google.com:19302",
 	// "stun:stun2.l.google.com:19302",
 	// "stun:stun3.l.google.com:19302",
@@ -86,7 +86,7 @@ var defaultSTUNServers = []string{
 	// "stun:stun.callwithus.com:3478",
 	// "stun:stun.counterpath.com:3478",
 	// "stun:stun.counterpath.net:3478",
-	"stun:stun.ekiga.net:3478",
+	// "stun:stun.ekiga.net:3478",
 	// "stun:stun.ideasip.com:3478",
 	// "stun:stun.internetcalls.com:3478",
 	// "stun:stun.schlund.de:3478",
