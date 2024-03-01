@@ -20,7 +20,8 @@ configGlobal.toml
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
-# Logs
+# Logs and metrics
+*.csv
 *.log
 
 # main executable
