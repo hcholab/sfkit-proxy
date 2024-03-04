@@ -71,7 +71,7 @@ const (
 	UDPNet = "udp4" // TODO: use "udp" for both IPv4 and IPv6
 )
 
-var gatherTimeout = 30 * time.Second
+var gatherTimeout = 60 * time.Second
 
 var defaultSTUNServers = []string{
 	// TODO: can we rely on Google?
