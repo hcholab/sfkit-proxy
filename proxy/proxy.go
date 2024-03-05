@@ -135,7 +135,7 @@ func (s *Service) dialRemote(ready <-chan any) DialFunc {
 	}
 }
 
-func getLocalAddr(localAddrs []netip.AddrPort, rc net.Conn) (localAddr *netip.AddrPort, err error) {
+func readLocalAddr(localAddrs []netip.AddrPort, rc net.Conn) (localAddr *netip.AddrPort, err error) {
 	// read destination port in big-endian format from the remote peer
 	bPort := make([]byte, 2)
 	if _, err = io.ReadFull(rc, bPort); err != nil {
@@ -232,7 +232,7 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 		return remoteConn.Close()
 	})
 
-	localAddr, err := getLocalAddr(localAddrs, remoteConn)
+	localAddr, err := readLocalAddr(localAddrs, remoteConn)
 	if err != nil {
 		return
 	}
