@@ -135,6 +135,27 @@ func (s *Service) dialRemote(ready <-chan any) DialFunc {
 	}
 }
 
+func getLocalAddr(localAddrs []netip.AddrPort, rc net.Conn) (localAddr *netip.AddrPort, err error) {
+	// read destination port in big-endian format from the remote peer
+	bPort := make([]byte, 2)
+	if _, err = io.ReadFull(rc, bPort); err != nil {
+		return
+	}
+	port := uint16(bPort[0])<<8 | uint16(bPort[1])
+
+	// look up local address:port based on the destination port
+	for _, la := range localAddrs {
+		if la.Port() == port {
+			localAddr = &la
+			break
+		}
+	}
+	if localAddr == nil {
+		err = fmt.Errorf("no local address corresponds to the port sent by the remote client: %d", port)
+	}
+	return
+}
+
 type pidConn struct {
 	Conns <-chan net.Conn
 	mpc.PID
@@ -211,9 +232,14 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 		return remoteConn.Close()
 	})
 
+	localAddr, err := getLocalAddr(localAddrs, remoteConn)
+	if err != nil {
+		return
+	}
+
 	err = util.Retry(ctx, func() (err error) {
 		var localConn *net.TCPConn
-		if localConn, err = getLocalConn(localAddrs, remoteConn); err != nil {
+		if localConn, err = getLocalConn(localAddr); err != nil {
 			return
 		}
 		defer util.Cleanup(&err, func() error {
@@ -283,27 +309,7 @@ func (s *Service) proxyRemoteClient(ctx context.Context, remoteConn net.Conn, lo
 	return
 }
 
-func getLocalConn(localAddrs []netip.AddrPort, rc net.Conn) (lc *net.TCPConn, err error) {
-	// read destination port in big-endian format from the remote peer
-	bPort := make([]byte, 2)
-	if _, err = io.ReadFull(rc, bPort); err != nil {
-		return
-	}
-	port := uint16(bPort[0])<<8 | uint16(bPort[1])
-
-	// look up local address:port based on the destination port
-	var localAddr *netip.AddrPort
-	for _, la := range localAddrs {
-		if la.Port() == port {
-			localAddr = &la
-			break
-		}
-	}
-	if localAddr == nil {
-		err = fmt.Errorf("no local address corresponds to the port sent by the remote client: %d", port)
-		return
-	}
-
+func getLocalConn(localAddr *netip.AddrPort) (lc *net.TCPConn, err error) {
 	// establish a new TCP connection to the local address:port
 	var c net.Conn
 	slog.Debug("Dialing local listener:", "addr", localAddr.String())
