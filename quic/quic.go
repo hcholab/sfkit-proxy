@@ -32,7 +32,9 @@ var errDone = errors.New("Done")
 
 func NewService(mpcConf *mpc.Config, tcg tlsConfsGetter, errs chan<- error) (s *Service, err error) {
 	qc := &quic.Config{
-		KeepAlivePeriod: 15 * time.Second,
+		HandshakeIdleTimeout: 30 * time.Second,
+		KeepAlivePeriod:      15 * time.Second,
+		MaxIdleTimeout:       5 * time.Minute,
 	}
 	s = &Service{mpcConf, qc, errs, tcg}
 	slog.Debug("Started QUIC service")
