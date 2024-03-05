@@ -29,7 +29,7 @@ func (h *prettyHandler) Handle(ctx context.Context, r slog.Record) error {
 
 	switch r.Level {
 	case slog.LevelDebug:
-		level = color.MagentaString(level)
+		level = color.HiBlackString(level)
 	case slog.LevelInfo:
 		level = color.BlueString(level)
 	case slog.LevelWarn:
