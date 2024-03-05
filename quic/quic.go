@@ -85,7 +85,7 @@ func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan net.C
 					}
 					return
 				})(); errors.Is(err, errDone) {
-					slog.Error("QUIC connection done:", "peerPID", peerPID)
+					slog.Debug("QUIC connection done:", "peerPID", peerPID)
 					err = nil // handle next TLSConf
 				} else if err != nil {
 					slog.Error("quic.GetConns():", "peerPID", peerPID, "err", err.Error())

@@ -15,6 +15,8 @@ import (
 	"github.com/pion/logging"
 )
 
+var globalLogLevel slog.Level
+
 type prettyHandlerOptions struct {
 	SlogOpts slog.HandlerOptions
 }
@@ -74,6 +76,7 @@ func SetupDefault(verbose bool) {
 	if verbose {
 		level = slog.LevelDebug
 	}
+	globalLogLevel = level
 
 	handler := newPrettyHandler(os.Stdout, prettyHandlerOptions{
 		SlogOpts: slog.HandlerOptions{
@@ -90,44 +93,51 @@ func SetupDefault(verbose bool) {
 
 type leveledLogger struct{}
 
+func leveledLog(level slog.Level, format string, args ...any) {
+	if globalLogLevel <= slog.LevelDebug {
+		prefix := fmt.Sprintf("ICE %s: ", level)
+		slog.Debug(prefix + fmt.Sprintf(format, args...))
+	}
+}
+
 func (l leveledLogger) Trace(msg string) {
-	// slog.Debug("ICE TRACE:     " + msg)
+	l.Tracef(msg)
 }
 
 func (l leveledLogger) Tracef(format string, args ...any) {
-	l.Trace(fmt.Sprintf(format, args...))
+	leveledLog(slog.LevelDebug-1, format, args...)
 }
 
 func (l leveledLogger) Debug(msg string) {
-	slog.Debug(msg)
+	l.Debugf(msg)
 }
 
 func (l leveledLogger) Debugf(format string, args ...any) {
-	l.Debug(fmt.Sprintf(format, args...))
+	leveledLog(slog.LevelDebug, format, args...)
 }
 
 func (l leveledLogger) Info(msg string) {
-	slog.Info(msg)
+	l.Infof(msg)
 }
 
 func (l leveledLogger) Infof(format string, args ...any) {
-	l.Info(fmt.Sprintf(format, args...))
+	leveledLog(slog.LevelInfo, format, args...)
 }
 
 func (l leveledLogger) Warn(msg string) {
-	slog.Warn(msg)
+	l.Warnf(msg)
 }
 
 func (l leveledLogger) Warnf(format string, args ...any) {
-	l.Warn(fmt.Sprintf(format, args...))
+	leveledLog(slog.LevelWarn, format, args...)
 }
 
 func (l leveledLogger) Error(msg string) {
-	slog.Error(msg)
+	l.Errorf(msg)
 }
 
 func (l leveledLogger) Errorf(format string, args ...any) {
-	l.Error(fmt.Sprintf(format, args...))
+	l.Error(fmt.Sprintf("ICE: "+format, args...))
 }
 
 type LoggerFactory struct{}
