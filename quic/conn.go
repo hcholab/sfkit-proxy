@@ -65,11 +65,11 @@ func (c *RawPacketConn) GetTransport() *quic.Transport {
 
 func (c *RawPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	ctx := c.readDeadline.ctx
-	slog.Debug("Reading non-QUIC packet", "ctx", ctx)
+	// slog.Debug("Reading non-QUIC packet", "ctx", ctx)
 	return c.handleOperation(ctx,
 		func(ctx context.Context) (n int, addr net.Addr, err error) {
 			n, addr, err = c.tr.ReadNonQUICPacket(ctx, p)
-			slog.Debug("Read non-QUIC packet:", "ctx", ctx, "n", n, "addr", addr, "err", err)
+			// slog.Debug("Read non-QUIC packet:", "ctx", ctx, "n", n, "addr", addr, "err", err)
 			return
 		},
 	)
@@ -77,11 +77,11 @@ func (c *RawPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 
 func (c *RawPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	ctx := c.writeDeadline.ctx
-	slog.Debug("Writing non-QUIC packet", "ctx", ctx, "addr", addr, "n", len(p))
-	n, _, err := c.handleOperation(c.writeDeadline.ctx,
+	// slog.Debug("Writing non-QUIC packet", "ctx", ctx, "addr", addr, "n", len(p))
+	n, _, err := c.handleOperation(ctx,
 		func(_ context.Context) (n int, _ net.Addr, err error) {
 			n, err = c.tr.WriteTo(p, addr)
-			slog.Debug("Wrote non-QUIC packet:", "ctx", ctx, "n", n, "addr", addr, "err", err)
+			// slog.Debug("Wrote non-QUIC packet:", "ctx", ctx, "n", n, "addr", addr, "err", err)
 			return
 		},
 	)
