@@ -150,13 +150,13 @@ type Conn struct {
 
 func (c *Conn) Read(p []byte) (n int, err error) {
 	n, err = c.Stream.Read(p)
-	slog.Debug("QUIC TRACE:     Read:", "nBytes", n, "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr(), "err", err)
+	// slog.Debug("QUIC TRACE:     Read:", "nBytes", n, "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr(), "err", err)
 	return
 }
 
 func (c *Conn) Write(p []byte) (n int, err error) {
 	n, err = c.Stream.Write(p)
-	slog.Debug("QUIC TRACE:     Write:", "nBytes", n, "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr(), "err", err)
+	// slog.Debug("QUIC TRACE:     Write:", "nBytes", n, "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr(), "err", err)
 	return
 }
 
