@@ -103,7 +103,7 @@ func (l leveledLogger) Debug(msg string) {
 }
 
 func (l leveledLogger) Debugf(format string, args ...any) {
-	slog.Debug(fmt.Sprintf(format, args...))
+	l.Debug(fmt.Sprintf(format, args...))
 }
 
 func (l leveledLogger) Info(msg string) {
@@ -111,23 +111,23 @@ func (l leveledLogger) Info(msg string) {
 }
 
 func (l leveledLogger) Infof(format string, args ...any) {
-	slog.Info(fmt.Sprintf(format, args...))
+	l.Info(fmt.Sprintf(format, args...))
 }
 
 func (l leveledLogger) Warn(msg string) {
-	slog.Debug(msg)
+	slog.Warn(msg)
 }
 
 func (l leveledLogger) Warnf(format string, args ...any) {
-	slog.Debug(fmt.Sprintf(format, args...))
+	l.Warn(fmt.Sprintf(format, args...))
 }
 
 func (l leveledLogger) Error(msg string) {
-	slog.Debug(msg)
+	slog.Error(msg)
 }
 
 func (l leveledLogger) Errorf(format string, args ...any) {
-	slog.Debug(fmt.Sprintf(format, args...))
+	l.Error(fmt.Sprintf(format, args...))
 }
 
 type LoggerFactory struct{}
