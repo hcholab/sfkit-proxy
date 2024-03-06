@@ -94,7 +94,7 @@ func SetupDefault(verbose bool) {
 type leveledLogger struct{}
 
 func leveledLog(level slog.Level, format string, args ...any) {
-	if globalLogLevel <= slog.LevelDebug {
+	if level >= globalLogLevel {
 		prefix := fmt.Sprintf("ICE %s: ", level)
 		slog.Debug(prefix + fmt.Sprintf(format, args...))
 	}
