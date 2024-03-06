@@ -148,18 +148,6 @@ type Conn struct {
 	quic.Stream
 }
 
-func (c *Conn) Read(p []byte) (n int, err error) {
-	n, err = c.Stream.Read(p)
-	// slog.Debug("QUIC TRACE:     Read:", "nBytes", n, "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr(), "err", err)
-	return
-}
-
-func (c *Conn) Write(p []byte) (n int, err error) {
-	n, err = c.Stream.Write(p)
-	// slog.Debug("QUIC TRACE:     Write:", "nBytes", n, "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr(), "err", err)
-	return
-}
-
 func (s *Service) handleServer(ctx context.Context, tr *quic.Transport, tlsConf *tls.Config, pid mpc.PID, conns chan<- net.Conn) (err error) {
 	l, err := tr.Listen(tlsConf, s.qConf)
 	if err != nil {
