@@ -51,6 +51,7 @@ func getTLSConfig(isClient bool, selfCert *tls.Certificate, peerCert *Certificat
 	c = &tls.Config{
 		Certificates: []tls.Certificate{*selfCert},
 		NextProtos:   []string{Proto},
+		MinVersion:   tls.VersionTLS13,
 	}
 	if isClient {
 		c.RootCAs = peerCertPool
