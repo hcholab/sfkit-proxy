@@ -8,6 +8,7 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -25,6 +26,8 @@ type prettyHandler struct {
 	slog.Handler
 	l *log.Logger
 }
+
+var secretMatch = regexp.MustCompile(`(?i)pwd\W+(\w+)`)
 
 func (h *prettyHandler) Handle(ctx context.Context, r slog.Record) error {
 	level := r.Level.String() + ":"
@@ -49,7 +52,8 @@ func (h *prettyHandler) Handle(ctx context.Context, r slog.Record) error {
 	fieldStr := strings.Join(fields, " ")
 
 	timeStr := r.Time.Format("[15:05:05.000]")
-	msg := color.CyanString(r.Message)
+	msg := mask(r.Message, secretMatch)
+	msg = color.CyanString(msg)
 	if r.Level == slog.LevelError && r.PC != 0 {
 		frames := runtime.CallersFrames([]uintptr{r.PC})
 		frame, _ := frames.Next()
@@ -59,6 +63,17 @@ func (h *prettyHandler) Handle(ctx context.Context, r slog.Record) error {
 	h.l.Println(timeStr, level, msg, color.WhiteString(fieldStr))
 
 	return nil
+}
+
+func mask(s string, p *regexp.Regexp) string {
+	matches := p.FindAllStringSubmatchIndex(s, -1)
+	for _, match := range matches {
+		for i := 2; i < len(match); i += 2 {
+			start, end := match[i], match[i+1]
+			s = s[:start] + strings.Repeat("*", end-start) + s[end:]
+		}
+	}
+	return s
 }
 
 func newPrettyHandler(
