@@ -4,12 +4,11 @@ WORKDIR /build
 
 COPY . .
 
-RUN CGO_ENABLED=0 go build
+RUN GOEXPERIMENT=boringcrypto go build
 
 
-FROM scratch
+FROM cgr.dev/chainguard/glibc-dynamic
 
-COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build /build/sfkit-proxy /
 
 ENTRYPOINT [ "/sfkit-proxy" ]
