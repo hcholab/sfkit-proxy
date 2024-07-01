@@ -1,6 +1,6 @@
 module demo-sfgwas
 
-go 1.22.1
+go 1.21.10
 
 require (
 	github.com/BurntSushi/toml v1.3.2
