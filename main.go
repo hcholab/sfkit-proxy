@@ -31,7 +31,7 @@ type Args struct {
 }
 
 func parseArgs() (args Args, err error) {
-	socksListenURI := "tcp://localhost:0"
+	socksListenURI := "socks5://localhost:7080"
 	signalServerURI := "ws://host.docker.internal:8000/api/ice" // TODO: change default for Terra
 	stunServers := strings.Join(ice.DefaultSTUNServers(), ",")
 	mpcConfigPath := "configGlobal.toml"
@@ -52,9 +52,11 @@ func parseArgs() (args Args, err error) {
 
 	if args.SocksListenURI, err = url.Parse(socksListenURI); err != nil {
 		return
-	} else if args.SocksListenURI.Scheme != "tcp" {
-		err = fmt.Errorf("invalid SOCKS URI scheme: %s, expected: tcp", args.SocksListenURI.Scheme)
+	} else if args.SocksListenURI.Scheme != "socks5" {
+		err = fmt.Errorf("invalid SOCKS URI scheme: %s, expected: socks5", args.SocksListenURI.Scheme)
 		return
+	} else {
+		args.SocksListenURI.Scheme = "tcp"
 	}
 	if args.SignalServerURI, err = url.Parse(signalServerURI); err != nil {
 		return
