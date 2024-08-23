@@ -31,7 +31,7 @@ type Args struct {
 }
 
 func parseArgs() (args Args, err error) {
-	socksListenURI := "tcp://:8000"
+	socksListenURI := "tcp://:0"
 	signalServerURI := "ws://host.docker.internal:8000/api/ice" // TODO: change default for Terra
 	stunServers := strings.Join(ice.DefaultSTUNServers(), ",")
 	mpcConfigPath := "configGlobal.toml"
