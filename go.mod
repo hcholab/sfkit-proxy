@@ -1,6 +1,7 @@
 module github.com/hcholab/sfkit-proxy
 
 go 1.21.10
+toolchain go1.22.5
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.11.1
@@ -13,9 +14,9 @@ require (
 	github.com/pion/ice/v3 v3.0.5
 	github.com/pion/logging v0.2.2
 	github.com/pion/stun/v2 v2.0.0
-	github.com/quic-go/quic-go v0.42.0
-	golang.org/x/exp v0.0.0-20240404231335-c0f41cb1a7a0
-	golang.org/x/net v0.26.0
+	github.com/quic-go/quic-go v0.48.2
+	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842
+	golang.org/x/net v0.28.0
 	golang.org/x/oauth2 v0.19.0
 )
 
@@ -65,10 +66,10 @@ require (
 	go.dedis.ch/protobuf v1.0.11 // indirect
 	go.etcd.io/bbolt v1.3.9 // indirect
 	go.uber.org/mock v0.4.0 // indirect
-	golang.org/x/crypto v0.24.0 // indirect
+	golang.org/x/crypto v0.26.0 // indirect
 	golang.org/x/mod v0.17.0 // indirect
-	golang.org/x/sys v0.21.0 // indirect
-	golang.org/x/text v0.16.0 // indirect
+	golang.org/x/sys v0.23.0 // indirect
+	golang.org/x/text v0.17.0 // indirect
 	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	gonum.org/v1/gonum v0.15.0 // indirect
