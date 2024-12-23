@@ -17,7 +17,7 @@ require (
 	github.com/pion/stun/v2 v2.0.0
 	github.com/quic-go/quic-go v0.48.2
 	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842
-	golang.org/x/net v0.28.0
+	golang.org/x/net v0.33.0
 	golang.org/x/oauth2 v0.19.0
 )
 
