@@ -46,6 +46,7 @@ func (h *prettyHandler) Handle(ctx context.Context, r slog.Record) error {
 	fields := make([]string, 0, r.NumAttrs())
 	r.Attrs(func(a slog.Attr) bool {
 		kv := fmt.Sprintf("%s=%+v", a.Key, a.Value.Any())
+		kv = mask(kv, secretMatch)
 		fields = append(fields, strings.TrimSpace(kv))
 		return true
 	})
