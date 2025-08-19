@@ -34,7 +34,7 @@ func NewService(mpcConf *mpc.Config, tcg tlsConfsGetter, errs chan<- error) (s *
 	qc := &quic.Config{
 		HandshakeIdleTimeout: 30 * time.Second,
 		KeepAlivePeriod:      15 * time.Second,
-		MaxIdleTimeout:       5 * time.Minute,
+		MaxIdleTimeout:       24 * time.Hour,
 	}
 	s = &Service{mpcConf, qc, errs, tcg}
 	slog.Debug("Started QUIC service")
