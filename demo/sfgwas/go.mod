@@ -7,8 +7,8 @@ toolchain go1.24.3
 require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/hcholab/sfgwas v0.0.0-20250319202214-5182aa7be703
-	golang.org/x/net v0.41.0
-	golang.org/x/sync v0.15.0
+	golang.org/x/net v0.43.0
+	golang.org/x/sync v0.16.0
 )
 
 require (
@@ -22,13 +22,14 @@ require (
 	github.com/ldsec/lattigo/v2 v2.4.1 // indirect
 	github.com/ldsec/unlynx v1.4.3 // indirect
 	github.com/montanaflynn/stats v0.7.1 // indirect
+	github.com/stretchr/testify v1.11.1 // indirect
 	go.dedis.ch/fixbuf v1.0.3 // indirect
 	go.dedis.ch/kyber/v3 v3.1.0 // indirect
 	go.dedis.ch/onet/v3 v3.2.10 // indirect
 	go.dedis.ch/protobuf v1.0.11 // indirect
 	go.etcd.io/bbolt v1.4.1 // indirect
-	golang.org/x/crypto v0.39.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/crypto v0.41.0 // indirect
+	golang.org/x/sys v0.35.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	gonum.org/v1/gonum v0.16.0 // indirect
 	rsc.io/goversion v1.2.0 // indirect
