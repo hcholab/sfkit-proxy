@@ -33,6 +33,15 @@ func (c *Config) IsClient(peerPID PID) bool {
 	return c.LocalPID > peerPID
 }
 
+var (
+	loopbackIPv4 = netip.MustParseAddr("127.0.0.1")
+	loopbackIPv6 = netip.MustParseAddr("::1")
+)
+
+func getAddr(ap netip.AddrPort, addr netip.Addr) netip.AddrPort {
+	return netip.AddrPortFrom(addr, ap.Port())
+}
+
 // ParseConfig parses MPC TOML config file,
 // and pre-calculates address <-> PID mappings for easy lookup.
 func ParseConfig(configPath string, localPID PID) (c *Config, err error) {
@@ -69,6 +78,8 @@ func ParseConfig(configPath string, localPID PID) (c *Config, err error) {
 					peerPIDs[clientPID] = true
 				case localPID == clientPID && c.IsClient(serverPID):
 					c.ServerPIDs[ap] = serverPID
+					c.ServerPIDs[getAddr(ap, loopbackIPv4)] = serverPID
+					c.ServerPIDs[getAddr(ap, loopbackIPv6)] = serverPID
 					peerPIDs[serverPID] = true
 				default:
 					continue
