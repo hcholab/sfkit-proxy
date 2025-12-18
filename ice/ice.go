@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pion/ice/v3"
@@ -66,6 +67,8 @@ const (
 
 	idLen   = 15
 	idRunes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+	UDPNet = "udp4" // TODO: use "udp" for both IPv4 and IPv6
 )
 
 var gatherTimeout = 60 * time.Second
@@ -100,20 +103,13 @@ func DefaultSTUNServers() []string {
 	return slices.Clone(defaultSTUNServers)
 }
 
-var udpNet = "udp4"
-
-func GetUDPNet() string {
-	return udpNet
-}
-
-func NewService(ctx context.Context, wsReady chan<- any, api *url.URL, rawStunURIs []string, proto, authKey, studyID string, mpcConf *mpc.Config, errs chan<- error) (s *Service, err error) {
+func NewService(ctx context.Context, wsReady chan<- any, api *url.URL, rawStunURIs []string, authKey, studyID string, mpcConf *mpc.Config, errs chan<- error) (s *Service, err error) {
 	s = &Service{
 		mpc:     mpcConf,
 		studyID: studyID,
 		msgs:    make(map[mpc.PID]chan Message),
 		errs:    errs,
 	}
-	udpNet = proto
 
 	// parse stun URIs
 	s.stunURIs, err = parseStunURIs(rawStunURIs)
@@ -256,7 +252,7 @@ func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent,
 	logger := logFactory.NewLogger("ice")
 
 	netTypes := []ice.NetworkType{}
-	switch udpNet {
+	switch UDPNet {
 	case "udp4":
 		netTypes = append(netTypes, ice.NetworkTypeUDP4)
 	case "udp6":
@@ -395,19 +391,15 @@ func getLocalCandidateIPAddrs(a *ice.Agent) (ips []net.IP, addrs []string, err e
 	}
 	mAddrs := map[string]bool{}
 	for _, c := range candidates {
-		addr := net.JoinHostPort(c.Address(), strconv.Itoa(c.Port()))
+		addr := fmt.Sprintf("%s:%d", c.Address(), c.Port())
 		mAddrs[addr] = true
 		if rel := c.RelatedAddress(); rel != nil {
-			addr = net.JoinHostPort(rel.Address, strconv.Itoa(rel.Port))
+			addr = fmt.Sprintf("%s:%d", rel.Address, rel.Port)
 			mAddrs[addr] = true
 		}
 	}
 	for addr := range mAddrs {
-		var host string
-		if host, _, err = net.SplitHostPort(addr); err != nil {
-			return
-		}
-		ip := net.ParseIP(host)
+		ip := net.ParseIP(strings.SplitN(addr, ":", 2)[0])
 		ips = append(ips, ip)
 		addrs = append(addrs, addr)
 	}
@@ -431,7 +423,8 @@ func (s *Service) handleCerts(ctx context.Context, a *ice.Agent, peerPID mpc.PID
 
 		case peerCert := <-peerCerts:
 			for _, peerAddr := range peerCert.Addrs {
-				if _, e := net.ResolveUDPAddr(udpNet, peerAddr); e != nil {
+				// TODO: use "udp" for both IPv4 and IPv6
+				if _, e := net.ResolveUDPAddr(UDPNet, peerAddr); e != nil {
 					err = e
 					break
 				}
@@ -457,7 +450,7 @@ func (s *Service) handleCerts(ctx context.Context, a *ice.Agent, peerPID mpc.PID
 			if e != nil {
 				return e
 			}
-			remoteAddr, _ := net.ResolveUDPAddr(udpNet, peerAddr) // already checked above
+			remoteAddr, _ := net.ResolveUDPAddr(UDPNet, peerAddr) // already checked above
 			tlsConfs <- &TLSConf{Config: tlsConf, RemoteAddr: remoteAddr}
 			slog.Debug("Created TLS config for", "peerAddr", peerAddr)
 

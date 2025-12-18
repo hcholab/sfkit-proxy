@@ -48,7 +48,7 @@ func (s *Service) GetConns(ctx context.Context, peerPID mpc.PID) (_ <-chan net.C
 	slog.Debug("Getting connection for", "peerPID", peerPID)
 
 	// TODO: use "udp" for both IPv4 and IPv6
-	udpConn, err := net.ListenUDP(ice.GetUDPNet(), nil)
+	udpConn, err := net.ListenUDP(ice.UDPNet, nil)
 	if err != nil {
 		return
 	}

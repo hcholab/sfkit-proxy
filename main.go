@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"slices"
 	"strings"
 	"syscall"
 
@@ -28,7 +27,6 @@ type Args struct {
 	StudyID         string
 	AuthKey         string
 	StunServerURIs  []string
-	Proto           string
 	Verbose         bool
 }
 
@@ -38,7 +36,6 @@ func parseArgs() (args Args, err error) {
 	stunServers := strings.Join(ice.DefaultSTUNServers(), ",")
 	mpcConfigPath := "configGlobal.toml"
 	mpcPID := 0
-	proto := "udp4"
 
 	flag.StringVar(&signalServerURI, "api", signalServerURI, "ICE signaling server API")
 	flag.StringVar(&socksListenURI, "socks", socksListenURI, "Local SOCKS listener URI")
@@ -50,7 +47,6 @@ func parseArgs() (args Args, err error) {
 
 	flag.StringVar(&args.AuthKey, "auth-key", "", "Auth key, if any")
 
-	flag.StringVar(&proto, "proto", proto, "Peer-to-peer network protocol: udp4, udp6, or udp (dual-stack)")
 	flag.BoolVar(&args.Verbose, "v", false, "Verbose output")
 	flag.Parse()
 
@@ -68,11 +64,6 @@ func parseArgs() (args Args, err error) {
 	args.StunServerURIs = strings.Split(stunServers, ",")
 	if args.StunServerURIs[0] == "" {
 		args.StunServerURIs = nil
-	}
-	args.Proto = proto
-	if !slices.Contains([]string{"udp4", "udp6", "udp"}, args.Proto) {
-		err = fmt.Errorf("invalid proto value: %s, must be udp4, udp6, or udp", args.Proto)
-		return
 	}
 	if args.StudyID == "" {
 		err = fmt.Errorf("empty study ID")
@@ -115,7 +106,7 @@ func run() (exitCode int, err error) {
 	// before initiating proxy communication
 	wsReady := make(chan any)
 
-	iceSvc, err := ice.NewService(ctx, wsReady, args.SignalServerURI, args.StunServerURIs, args.Proto, args.AuthKey, args.StudyID, args.MPCConfig, errs)
+	iceSvc, err := ice.NewService(ctx, wsReady, args.SignalServerURI, args.StunServerURIs, args.AuthKey, args.StudyID, args.MPCConfig, errs)
 	if err != nil {
 		return
 	}
