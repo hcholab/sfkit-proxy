@@ -8,7 +8,7 @@ require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/hcholab/sfgwas v0.0.0-20250319202214-5182aa7be703
 	golang.org/x/net v0.47.0
-	golang.org/x/sync v0.16.0
+	golang.org/x/sync v0.18.0
 )
 
 require (

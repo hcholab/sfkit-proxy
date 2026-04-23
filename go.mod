@@ -2,8 +2,6 @@ module github.com/hcholab/sfkit-proxy
 
 go 1.25
 
-toolchain go1.25
-
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.10.1
