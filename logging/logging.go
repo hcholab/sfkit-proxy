@@ -87,17 +87,13 @@ func newPrettyHandler(
 	}
 }
 
-func SetupDefault(verbose bool) {
-	level := slog.LevelInfo
-	if verbose {
-		level = slog.LevelDebug
-	}
-	globalLogLevel = level
+func SetupDefault(verbosity int) {
+	globalLogLevel = -slog.Level(verbosity * 4)
 
 	handler := newPrettyHandler(os.Stdout, prettyHandlerOptions{
 		SlogOpts: slog.HandlerOptions{
 			AddSource: true,
-			Level:     level,
+			Level:     globalLogLevel,
 		},
 	})
 

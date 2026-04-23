@@ -27,7 +27,7 @@ type Args struct {
 	StudyID         string
 	AuthKey         string
 	StunServerURIs  []string
-	Verbose         bool
+	Verbosity       int
 }
 
 func parseArgs() (args Args, err error) {
@@ -47,7 +47,10 @@ func parseArgs() (args Args, err error) {
 
 	flag.StringVar(&args.AuthKey, "auth-key", "", "Auth key, if any")
 
-	flag.BoolVar(&args.Verbose, "v", false, "Verbose output")
+	flag.BoolFunc("v", "Verbose output (-v for debug, -v -v for trace)", func(string) error {
+		args.Verbosity++
+		return nil
+	})
 	flag.Parse()
 
 	if args.SocksListenURI, err = url.Parse(socksListenURI); err != nil {
@@ -96,7 +99,7 @@ func run() (exitCode int, err error) {
 		return
 	}
 
-	logging.SetupDefault(args.Verbose)
+	logging.SetupDefault(args.Verbosity)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	errs := make(chan error, 1)
