@@ -261,20 +261,18 @@ func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent,
 		netTypes = append(netTypes, ice.NetworkTypeUDP4, ice.NetworkTypeUDP6)
 	}
 
+	mux := ice.NewUniversalUDPMuxDefault(ice.UniversalUDPMuxParams{
+		UDPConn: udpConn,
+		Logger:  logger,
+	})
 	a, err = ice.NewAgent(&ice.AgentConfig{
 		Urls:           stunURIs,
 		NetworkTypes:   netTypes,
 		CandidateTypes: []ice.CandidateType{ice.CandidateTypeServerReflexive},
-		UDPMux: ice.NewUDPMuxDefault(ice.UDPMuxParams{
-			UDPConn: udpConn,
-			Logger:  logger,
-		}),
-		UDPMuxSrflx: ice.NewUniversalUDPMuxDefault(ice.UniversalUDPMuxParams{
-			UDPConn: udpConn,
-			Logger:  logger,
-		}),
-		GatherTimeout: &gatherTimeout,
-		LoggerFactory: logFactory,
+		UDPMux:         mux,
+		UDPMuxSrflx:    mux,
+		GatherTimeout:  &gatherTimeout,
+		LoggerFactory:  logFactory,
 	})
 	if err == nil {
 		slog.Debug("Created ICE agent:", "localAddr", udpConn.LocalAddr())
