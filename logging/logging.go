@@ -52,7 +52,7 @@ func (h *prettyHandler) Handle(ctx context.Context, r slog.Record) error {
 	})
 	fieldStr := strings.Join(fields, " ")
 
-	timeStr := r.Time.Format("[15:05:05.000]")
+	timeStr := r.Time.Format("[15:04:05.000]")
 	msg := mask(r.Message, secretMatch)
 	msg = color.CyanString(msg)
 	if r.Level == slog.LevelError && r.PC != 0 {
