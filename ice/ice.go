@@ -26,12 +26,13 @@ import (
 )
 
 type Service struct {
-	mpc      *mpc.Config
-	ws       *websocket.Conn
-	msgs     map[mpc.PID]chan Message
-	errs     chan<- error
-	studyID  string
-	stunURIs []*stun.URI
+	mpc       *mpc.Config
+	ws        *websocket.Conn
+	msgs      map[mpc.PID]chan Message
+	errs      chan<- error
+	studyID   string
+	stunURIs  []*stun.URI
+	stunUsers []string
 }
 
 type MessageType string
@@ -103,16 +104,17 @@ func DefaultSTUNServers() []string {
 	return slices.Clone(defaultSTUNServers)
 }
 
-func NewService(ctx context.Context, wsReady chan<- any, api *url.URL, rawStunURIs []string, authKey, studyID string, mpcConf *mpc.Config, errs chan<- error) (s *Service, err error) {
+func NewService(ctx context.Context, wsReady chan<- any, api *url.URL, rawStunURIs, rawStunUsers []string, authKey, studyID string, mpcConf *mpc.Config, errs chan<- error) (s *Service, err error) {
 	s = &Service{
-		mpc:     mpcConf,
-		studyID: studyID,
-		msgs:    make(map[mpc.PID]chan Message),
-		errs:    errs,
+		mpc:       mpcConf,
+		studyID:   studyID,
+		msgs:      make(map[mpc.PID]chan Message),
+		errs:      errs,
+		stunUsers: rawStunUsers,
 	}
 
 	// parse stun URIs
-	s.stunURIs, err = parseStunURIs(rawStunURIs)
+	s.stunURIs, err = parseStunURIs(rawStunURIs, rawStunUsers)
 	if err != nil {
 		return
 	}
@@ -266,13 +268,14 @@ func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent,
 		Logger:  logger,
 	})
 	a, err = ice.NewAgent(&ice.AgentConfig{
-		Urls:           stunURIs,
-		NetworkTypes:   netTypes,
-		CandidateTypes: []ice.CandidateType{ice.CandidateTypeServerReflexive},
-		UDPMux:         mux,
-		UDPMuxSrflx:    mux,
-		GatherTimeout:  &gatherTimeout,
-		LoggerFactory:  logFactory,
+		Urls:               stunURIs,
+		NetworkTypes:       netTypes,
+		CandidateTypes:     []ice.CandidateType{ice.CandidateTypeServerReflexive},
+		UDPMux:             mux,
+		UDPMuxSrflx:        mux,
+		GatherTimeout:      &gatherTimeout,
+		LoggerFactory:      logFactory,
+		InsecureSkipVerify: true,
 	})
 	if err == nil {
 		slog.Debug("Created ICE agent:", "localAddr", udpConn.LocalAddr())
@@ -280,12 +283,19 @@ func createICEAgent(stunURIs []*stun.URI, udpConn net.PacketConn) (a *ice.Agent,
 	return
 }
 
-func parseStunURIs(rawURIs []string) (uris []*stun.URI, err error) {
-	for _, u := range rawURIs {
+func parseStunURIs(rawURIs, rawUsers []string) (uris []*stun.URI, err error) {
+	for i, u := range rawURIs {
 		var uri *stun.URI
 		uri, err = stun.ParseURI(u)
 		if err != nil {
 			return
+		}
+		if i < len(rawUsers) {
+			user := strings.SplitN(rawUsers[i], ":", 2)
+			if len(user) == 2 {
+				uri.Username = user[0]
+				uri.Password = user[1]
+			}
 		}
 		uris = append(uris, uri)
 	}

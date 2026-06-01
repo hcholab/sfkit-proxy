@@ -27,6 +27,7 @@ type Args struct {
 	StudyID         string
 	AuthKey         string
 	StunServerURIs  []string
+	StunUsers       []string
 	Verbosity       int
 }
 
@@ -34,12 +35,14 @@ func parseArgs() (args Args, err error) {
 	socksListenURI := "socks5://localhost:7080"
 	signalServerURI := "ws://host.docker.internal:8000/api/ice" // TODO: change default for Terra
 	stunServers := strings.Join(ice.DefaultSTUNServers(), ",")
+	stunUsers := ""
 	mpcConfigPath := "configGlobal.toml"
 	mpcPID := 0
 
 	flag.StringVar(&signalServerURI, "api", signalServerURI, "ICE signaling server API")
 	flag.StringVar(&socksListenURI, "socks", socksListenURI, "Local SOCKS listener URI")
 	flag.StringVar(&stunServers, "stun", stunServers, "Comma-separated list of STUN/TURN server URIs, in the order of preference")
+	flag.StringVar(&stunUsers, "stun-user", stunUsers, "Comma-separated list of STUN/TURN credentials (user:pass,...) matching -stun list")
 
 	flag.StringVar(&mpcConfigPath, "mpc", mpcConfigPath, "Global MPC config path (.toml file)")
 	flag.StringVar(&args.StudyID, "study", "", "Study ID")
@@ -68,6 +71,7 @@ func parseArgs() (args Args, err error) {
 	if args.StunServerURIs[0] == "" {
 		args.StunServerURIs = nil
 	}
+	args.StunUsers = strings.Split(stunUsers, ",")
 	if args.StudyID == "" {
 		err = fmt.Errorf("empty study ID")
 		return
@@ -109,7 +113,7 @@ func run() (exitCode int, err error) {
 	// before initiating proxy communication
 	wsReady := make(chan any)
 
-	iceSvc, err := ice.NewService(ctx, wsReady, args.SignalServerURI, args.StunServerURIs, args.AuthKey, args.StudyID, args.MPCConfig, errs)
+	iceSvc, err := ice.NewService(ctx, wsReady, args.SignalServerURI, args.StunServerURIs, args.StunUsers, args.AuthKey, args.StudyID, args.MPCConfig, errs)
 	if err != nil {
 		return
 	}
