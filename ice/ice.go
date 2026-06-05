@@ -435,12 +435,14 @@ func (s *Service) handleCerts(ctx context.Context, a *ice.Agent, peerPID mpc.PID
 		case peerCert := <-peerCerts:
 			for _, peerAddr := range peerCert.Addrs {
 				// TODO: use "udp" for both IPv4 and IPv6
-				if _, e := net.ResolveUDPAddr(UDPNet, peerAddr); e != nil {
+				pAddr, e := net.ResolveUDPAddr(UDPNet, peerAddr)
+				if e != nil {
 					err = e
 					break
 				}
-				peerToRemoteCerts[peerAddr] = peerCert
-				slog.Debug("Added remote certificate for", "peerAddr", peerAddr)
+				peerHost := pAddr.IP.String()
+				peerToRemoteCerts[peerHost] = peerCert
+				slog.Debug("Added remote certificate for", "peerHost", peerHost)
 			}
 
 		case <-ctx.Done():
@@ -453,7 +455,12 @@ func (s *Service) handleCerts(ctx context.Context, a *ice.Agent, peerPID mpc.PID
 
 		// Check when both certs have been received
 		for peerAddr, localCert := range peerToLocalCerts {
-			peerCert, ok := peerToRemoteCerts[peerAddr]
+			pAddr, e := net.ResolveUDPAddr(UDPNet, peerAddr)
+			if e != nil {
+				return e
+			}
+			peerHost := pAddr.IP.String()
+			peerCert, ok := peerToRemoteCerts[peerHost]
 			if !ok {
 				continue
 			}
@@ -463,9 +470,9 @@ func (s *Service) handleCerts(ctx context.Context, a *ice.Agent, peerPID mpc.PID
 			}
 			remoteAddr, _ := net.ResolveUDPAddr(UDPNet, peerAddr) // already checked above
 			tlsConfs <- &TLSConf{Config: tlsConf, RemoteAddr: remoteAddr}
-			slog.Debug("Created TLS config for", "peerAddr", peerAddr)
+			slog.Debug("Created TLS config for", "peerHost", peerHost)
 
-			delete(peerToRemoteCerts, peerAddr)
+			delete(peerToRemoteCerts, peerHost)
 			delete(peerToLocalCerts, peerAddr)
 		}
 		return
