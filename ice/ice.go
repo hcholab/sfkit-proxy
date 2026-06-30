@@ -8,15 +8,16 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/pion/ice/v3"
 	"github.com/pion/stun/v2"
-	"golang.org/x/exp/slices"
 	"golang.org/x/net/websocket"
 
 	"github.com/hcholab/sfkit-proxy/auth"
@@ -33,6 +34,8 @@ type Service struct {
 	studyID   string
 	stunURIs  []*stun.URI
 	stunUsers []string
+	turnHosts map[string]bool
+	turnRelay bool
 }
 
 type MessageType string
@@ -104,13 +107,14 @@ func DefaultSTUNServers() []string {
 	return slices.Clone(defaultSTUNServers)
 }
 
-func NewService(ctx context.Context, wsReady chan<- any, api *url.URL, rawStunURIs, rawStunUsers []string, authKey, studyID string, mpcConf *mpc.Config, errs chan<- error) (s *Service, err error) {
+func NewService(ctx context.Context, wsReady chan<- any, api *url.URL, rawStunURIs, rawStunUsers []string, turnRelay bool, authKey, studyID string, mpcConf *mpc.Config, errs chan<- error) (s *Service, err error) {
 	s = &Service{
 		mpc:       mpcConf,
 		studyID:   studyID,
 		msgs:      make(map[mpc.PID]chan Message),
 		errs:      errs,
 		stunUsers: rawStunUsers,
+		turnRelay: turnRelay,
 	}
 
 	// parse stun URIs
@@ -118,6 +122,7 @@ func NewService(ctx context.Context, wsReady chan<- any, api *url.URL, rawStunUR
 	if err != nil {
 		return
 	}
+	s.turnHosts = getTURNHosts(s.stunURIs)
 
 	util.Go(ctx, errs, func() (err error) {
 		// connect to the signaling API via WebSocket
@@ -305,6 +310,19 @@ func parseStunURIs(rawURIs, rawUsers []string) (uris []*stun.URI, err error) {
 	return
 }
 
+func getTURNHosts(uris []*stun.URI) (hosts map[string]bool) {
+	hosts = map[string]bool{}
+	for _, uri := range uris {
+		if uri.Scheme == stun.SchemeTypeTURN || uri.Scheme == stun.SchemeTypeTURNS {
+			hosts[uri.Host] = true
+		}
+	}
+	if len(hosts) > 0 {
+		slog.Debug("TURN servers:", "hosts", slices.Collect(maps.Keys(hosts)))
+	}
+	return
+}
+
 func (s *Service) setupNewCandidateHandler(a *ice.Agent, targetPID mpc.PID, udpConn net.PacketConn) (err error) {
 	var connPort int
 	_, udpConnPort, err := net.SplitHostPort(udpConn.LocalAddr().String())
@@ -327,7 +345,8 @@ func (s *Service) setupNewCandidateHandler(a *ice.Agent, targetPID mpc.PID, udpC
 			relPort = c.RelatedAddress().Port
 		}
 		if c.Type() == ice.CandidateTypeServerReflexive && c.Port() != connPort && relPort != connPort {
-			slog.Debug("Ignoring local ICE candidate with a different port:",
+			slog.Debug(
+				"Ignoring local ICE candidate with a different port:",
 				"connPort", connPort, "candidatePort", c.Port(), "candidateRelatedPort", relPort,
 			)
 			return
@@ -571,8 +590,23 @@ func (s *Service) handleRemoteCredential(a *ice.Agent, msg Message, conns chan<-
 		return
 	}
 
+	if !s.turnRelay && s.isTurnRelayConnection(c) {
+		slog.Warn("Rejecting relayed ICE connection:", "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr())
+		_ = c.Close()
+		return
+	}
+
 	slog.Info("Established ICE connection:", "localAddr", c.LocalAddr(), "remoteAddr", c.RemoteAddr())
 	conns <- c
+}
+
+func (s *Service) isTurnRelayConnection(c net.Conn) bool {
+	return s.isTurnRelayAddr(c.RemoteAddr()) || s.isTurnRelayAddr(c.LocalAddr())
+}
+
+func (s *Service) isTurnRelayAddr(addr net.Addr) bool {
+	host, _, err := net.SplitHostPort(addr.String())
+	return err == nil && s.turnHosts[host]
 }
 
 func handleRemoteCertificate(cert string, peerCerts chan<- *Certificate) {

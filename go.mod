@@ -14,7 +14,6 @@ require (
 	github.com/pion/logging v0.2.3
 	github.com/pion/stun/v2 v2.0.0
 	github.com/quic-go/quic-go v0.57.1
-	golang.org/x/exp v0.0.0-20250606033433-dcc06ee1d476
 	golang.org/x/net v0.47.0
 	golang.org/x/oauth2 v0.30.0
 )

@@ -28,6 +28,7 @@ type Args struct {
 	AuthKey         string
 	StunServerURIs  []string
 	StunUsers       []string
+	TurnRelay       bool
 	Verbosity       int
 }
 
@@ -43,6 +44,7 @@ func parseArgs() (args Args, err error) {
 	flag.StringVar(&socksListenURI, "socks", socksListenURI, "Local SOCKS listener URI")
 	flag.StringVar(&stunServers, "stun", stunServers, "Comma-separated list of STUN/TURN server URIs, in the order of preference")
 	flag.StringVar(&stunUsers, "stun-user", stunUsers, "Comma-separated list of STUN/TURN credentials (user:pass,...) matching -stun list")
+	flag.BoolVar(&args.TurnRelay, "turn-relay", false, "Allow proxying established connections through TURN relay")
 
 	flag.StringVar(&mpcConfigPath, "mpc", mpcConfigPath, "Global MPC config path (.toml file)")
 	flag.StringVar(&args.StudyID, "study", "", "Study ID")
@@ -113,7 +115,7 @@ func run() (exitCode int, err error) {
 	// before initiating proxy communication
 	wsReady := make(chan any)
 
-	iceSvc, err := ice.NewService(ctx, wsReady, args.SignalServerURI, args.StunServerURIs, args.StunUsers, args.AuthKey, args.StudyID, args.MPCConfig, errs)
+	iceSvc, err := ice.NewService(ctx, wsReady, args.SignalServerURI, args.StunServerURIs, args.StunUsers, args.TurnRelay, args.AuthKey, args.StudyID, args.MPCConfig, errs)
 	if err != nil {
 		return
 	}
