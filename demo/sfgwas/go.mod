@@ -1,13 +1,11 @@
 module demo-sfgwas
 
-go 1.24.0
-
-toolchain go1.24.3
+go 1.25.0
 
 require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/hcholab/sfgwas v0.0.0-20250319202214-5182aa7be703
-	golang.org/x/net v0.47.0
+	golang.org/x/net v0.55.0
 	golang.org/x/sync v0.18.0
 )
 
@@ -28,8 +26,8 @@ require (
 	go.dedis.ch/onet/v3 v3.2.10 // indirect
 	go.dedis.ch/protobuf v1.0.11 // indirect
 	go.etcd.io/bbolt v1.4.1 // indirect
-	golang.org/x/crypto v0.45.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/crypto v0.51.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	gonum.org/v1/gonum v0.16.0 // indirect
 	rsc.io/goversion v1.2.0 // indirect
