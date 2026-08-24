@@ -178,7 +178,6 @@ func (s *Service) GetTLSConfigs(ctx context.Context, peerPID mpc.PID, udpConn ne
 
 	// initialize the ICE agent
 	<-s.turnReady
-	s.turnHosts = getTURNHosts(s.stunURIs)
 	a, err := createICEAgent(s.stunURIs, udpConn)
 	if err != nil {
 		return
@@ -259,6 +258,7 @@ func (s *Service) receiveMessage() (err error) {
 		if err = s.parseTurnMessageURIs(msg.Data); err != nil {
 			return
 		}
+		s.turnHosts = getTURNHosts(s.stunURIs)
 		close(s.turnReady)
 	} else if msg.TargetPID < 0 {
 		slog.Error("Received message without a targetPID", "msg", msg)
