@@ -131,7 +131,6 @@ func NewService(ctx context.Context, wsReady chan<- any, api *url.URL, rawStunUR
 	if err != nil {
 		return
 	}
-	s.turnHosts = getTURNHosts(s.stunURIs)
 
 	util.Go(ctx, errs, func() (err error) {
 		// connect to the signaling API via WebSocket
@@ -179,6 +178,7 @@ func (s *Service) GetTLSConfigs(ctx context.Context, peerPID mpc.PID, udpConn ne
 
 	// initialize the ICE agent
 	<-s.turnReady
+	s.turnHosts = getTURNHosts(s.stunURIs)
 	a, err := createICEAgent(s.stunURIs, udpConn)
 	if err != nil {
 		return
