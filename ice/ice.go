@@ -35,6 +35,7 @@ type Service struct {
 	stunURIs  []*stun.URI
 	stunUsers []string
 	turnHosts map[string]bool
+	turnReady chan any
 	turnRelay bool
 }
 
@@ -45,6 +46,7 @@ const (
 	MessageTypeCredential  MessageType = "credential"
 	MessageTypeCertificate MessageType = "certificate"
 	MessageTypeError       MessageType = "error"
+	MessageTypeTurn        MessageType = "turn"
 )
 
 type Message struct {
@@ -63,6 +65,12 @@ type Credential struct {
 type Certificate struct {
 	PEM   string   `json:"pem"`
 	Addrs []string `json:"addrs"`
+}
+
+type Turn struct {
+	URLs     []string `json:"urls"`
+	Username string   `json:"username"`
+	Password string   `json:"password"`
 }
 
 const (
@@ -114,6 +122,7 @@ func NewService(ctx context.Context, wsReady chan<- any, api *url.URL, rawStunUR
 		msgs:      make(map[mpc.PID]chan Message),
 		errs:      errs,
 		stunUsers: rawStunUsers,
+		turnReady: make(chan any),
 		turnRelay: turnRelay,
 	}
 
@@ -169,6 +178,7 @@ func (s *Service) GetTLSConfigs(ctx context.Context, peerPID mpc.PID, udpConn ne
 	}
 
 	// initialize the ICE agent
+	<-s.turnReady
 	a, err := createICEAgent(s.stunURIs, udpConn)
 	if err != nil {
 		return
@@ -245,11 +255,33 @@ func (s *Service) receiveMessage() (err error) {
 
 	if msg.Type == MessageTypeError {
 		slog.Error("Signaling error: " + msg.Data)
+	} else if msg.Type == MessageTypeTurn {
+		if err = s.parseTurnMessageURIs(msg.Data); err != nil {
+			return
+		}
+		close(s.turnReady)
 	} else if msg.TargetPID < 0 {
 		slog.Error("Received message without a targetPID", "msg", msg)
 	} else {
 		slog.Debug("Received signaling message:", "msg", msg)
 		s.msgs[msg.SourcePID] <- msg
+	}
+	return
+}
+
+func (s *Service) parseTurnMessageURIs(data string) (err error) {
+	var uris []*stun.URI
+	var t Turn
+	if err = json.Unmarshal([]byte(data), &t); err != nil {
+		slog.Error("Unmarshalling TURN config", "err", err)
+		return
+	}
+	users := make([]string, len(t.URLs))
+	for i := range users {
+		users[i] = t.Username + ":" + t.Password
+	}
+	if uris, err = parseStunURIs(t.URLs, users); err == nil && len(uris) > 0 {
+		s.stunURIs = uris
 	}
 	return
 }
