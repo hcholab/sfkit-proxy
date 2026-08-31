@@ -1,6 +1,6 @@
 module github.com/hcholab/sfkit-proxy
 
-go 1.25
+go 1.25.0
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.0
@@ -14,7 +14,7 @@ require (
 	github.com/pion/logging v0.2.3
 	github.com/pion/stun/v2 v2.0.0
 	github.com/quic-go/quic-go v0.57.1
-	golang.org/x/net v0.47.0
+	golang.org/x/net v0.54.0
 	golang.org/x/oauth2 v0.30.0
 )
 
@@ -59,9 +59,9 @@ require (
 	go.dedis.ch/onet/v3 v3.2.10 // indirect
 	go.dedis.ch/protobuf v1.0.11 // indirect
 	go.etcd.io/bbolt v1.4.1 // indirect
-	golang.org/x/crypto v0.45.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
-	golang.org/x/text v0.31.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	gonum.org/v1/gonum v0.16.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
